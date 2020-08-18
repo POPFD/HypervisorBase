@@ -1,0 +1,141 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Driver Files">
+      <UniqueIdentifier>{8E41214B-6785-4CFE-B992-037D68949A14}</UniqueIdentifier>
+      <Extensions>inf;inv;inx;mof;mc;</Extensions>
+    </Filter>
+    <Filter Include="Source Files\ASM">
+      <UniqueIdentifier>{fc0548fe-9521-4694-89cc-40a9799aa883}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\ASM">
+      <UniqueIdentifier>{892b3367-7a0f-40f2-ba6d-e6717e715819}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\BEA">
+      <UniqueIdentifier>{237c3c4a-885c-4770-9cae-e31ffd905d58}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="HandlerShim.asm">
+      <Filter>Source Files\ASM</Filter>
+    </MASM>
+    <MASM Include="Intrinsics.asm">
+      <Filter>Source Files\ASM</Filter>
+    </MASM>
+    <MASM Include="VMCALL_Stub.asm">
+      <Filter>Source Files\ASM</Filter>
+    </MASM>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="HandlerShim.h">
+      <Filter>Header Files\ASM</Filter>
+    </ClInclude>
+    <ClInclude Include="Intrinsics.h">
+      <Filter>Header Files\ASM</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Shared\BEA\basic_types.h">
+      <Filter>Header Files\BEA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Shared\BEA\BeaEngine.h">
+      <Filter>Header Files\BEA</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Shared\BEA\export.h">
+      <Filter>Header Files\BEA</Filter>
+    </ClInclude>
+    <ClInclude Include="CPUID.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Debug.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EPT.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GDT.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Handlers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Hypervisor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MemManage.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MSR.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MTRR.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Paging.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Process.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VMCALL.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VMHook.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VMM.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VMShadow.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="CPUID.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="EPT.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GDT.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Handlers.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Hypervisor.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MemManage.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MSR.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MTRR.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VMCALL.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VMHook.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VMM.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VMShadow.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

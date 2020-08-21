@@ -161,7 +161,7 @@ static void handleExitReason(PVMM_DATA lpData, PCONTEXT guestContext)
 		{
 			/* If we have handled the MOV to/from CR correctly,
 			 * we go to the next instruction. */
-			moveToNextInstruction = VMShadow_handleMovCR(&lpData->eptConfig);
+			moveToNextInstruction = VMShadow_handleMovCR(lpData);
 			break;
 		}
 
@@ -254,6 +254,11 @@ static void handleExitReason(PVMM_DATA lpData, PCONTEXT guestContext)
 
 		default:
 		{
+			if (FALSE == KD_DEBUGGER_NOT_PRESENT)
+			{
+				DbgBreakPoint();
+			}
+
 			DEBUG_PRINT("Unhandled VMExit with reason: 0x%I64X\r\n", exitReason);
 			break;
 		}

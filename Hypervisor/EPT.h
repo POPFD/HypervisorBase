@@ -72,8 +72,10 @@ typedef struct _EPT_SHADOW_PAGE
 	/* Pointer to the PML1 entry that will be modified between RW and E. */
 	PEPT_PML1_ENTRY targetPML1E;
 
-	/* Will store the flags for when we need to do EPT switch. */
-	EPT_PML1_ENTRY executePML1E;
+	/* Will store the flags of the specific PML1E's that will be
+	 * used for targetting shadowing. */
+	EPT_PML1_ENTRY executeTargetPML1E;
+	EPT_PML1_ENTRY executeNotTargetPML1E;
 	EPT_PML1_ENTRY readWritePML1E;
 
 	/* List entry for the page hook, this will be used to keep track of

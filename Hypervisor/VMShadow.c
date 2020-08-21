@@ -58,17 +58,24 @@ BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
 					*		 know when to put it back to the RW only page. */
 
 					/* If so, we update the PML1E so that the execute only page is visible to the guest. */
-					//foundShadow->targetPML1E->Flags = foundShadow->executePML1E.Flags;
+					foundShadow->targetPML1E->Flags = foundShadow->executeTargetPML1E.Flags;
 				}
 				else
 				{
 					/* TODO: Switch to the original execute page, we will use MTF tracing to
 					 *		 know when to put it back to the RW only page. */
-
-					//foundShadow->targetPML1E->Flags = foundShadow->readWritePML1E.Flags;
-					//foundShadow->targetPML1E->ExecuteAccess = 1;
+					foundShadow->targetPML1E->Flags = foundShadow->executeNotTargetPML1E.Flags;
 				}
 
+				/* Now we must use MTF tracing so we know we're still executing in
+				 * the page that has been decided to be set. In the MTF trace handler,
+				 * we will check to see if RIP is within page, if not then we will restore
+				 * the target page back to the RW only entry. */
+				UINT64 procControls;
+				__vmx_vmread(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, &procControls);
+
+				procControls |= IA32_VMX_PROCBASED_CTLS_MONITOR_TRAP_FLAG_FLAG;
+				__vmx_vmwrite(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, procControls);
 
 				result = TRUE;
 			}
@@ -247,14 +254,22 @@ static NTSTATUS hidePage(PEPT_CONFIG eptConfig, PEPROCESS targetProcess, PHYSICA
 
 				if (NULL != shadowConfig->targetPML1E)
 				{
-					/* Create the executable PML1E. */
-					shadowConfig->executePML1E.Flags = 0;
-					shadowConfig->executePML1E.ReadAccess = 0;
-					shadowConfig->executePML1E.WriteAccess = 0;
-					shadowConfig->executePML1E.ExecuteAccess = 1;
-					shadowConfig->executePML1E.PageFrameNumber = MmGetPhysicalAddress(&shadowConfig->executePage).QuadPart / PAGE_SIZE;
+					/* Create the executable PML1E when it IS the target process. */
+					shadowConfig->executeTargetPML1E.Flags = 0;
+					shadowConfig->executeTargetPML1E.ReadAccess = 0;
+					shadowConfig->executeTargetPML1E.WriteAccess = 0;
+					shadowConfig->executeTargetPML1E.ExecuteAccess = 1;
+					shadowConfig->executeTargetPML1E.PageFrameNumber = MmGetPhysicalAddress(&shadowConfig->executePage).QuadPart / PAGE_SIZE;
 
-					/* Create the readwrite PML1E */
+					/* Create the executable PML1E when the it is NOT the target process.
+					 * Here we want to keep original flags and guest physical address, but just disable read/write. */
+					shadowConfig->executeNotTargetPML1E.Flags = shadowConfig->targetPML1E->Flags;
+					shadowConfig->executeNotTargetPML1E.ReadAccess = 0;
+					shadowConfig->executeNotTargetPML1E.WriteAccess = 0;
+					shadowConfig->executeNotTargetPML1E.ExecuteAccess = 1;
+
+					/* Create the readwrite PML1E when ANY read write to the page takes place.
+					 * Here we want to keep original flags, however disable execute access. */
 					shadowConfig->readWritePML1E.Flags = shadowConfig->targetPML1E->Flags;
 					shadowConfig->readWritePML1E.ReadAccess = 1;
 					shadowConfig->readWritePML1E.WriteAccess = 1;

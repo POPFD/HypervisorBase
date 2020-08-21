@@ -20,7 +20,7 @@ typedef NTSTATUS(*fnActionHandler)(PVOID buffer, SIZE_T bufferSize);
 static NTSTATUS actionGetProcessBase(PVOID buffer, SIZE_T bufferSize);
 static NTSTATUS actionReadUserMemory(PVOID buffer, SIZE_T bufferSize);
 static NTSTATUS actionWriteUserMemory(PVOID buffer, SIZE_T bufferSize);
-static NTSTATUS actionShadow(PVOID buffer, SIZE_T bufferSize);
+static NTSTATUS actionShadowKernel(PVOID buffer, SIZE_T bufferSize);
 
 static NTSTATUS getGuestBuffer(PEPROCESS process, PVOID buffer, SIZE_T bufferSize, PVOID* hostBuffer);
 /******************** Action Handlers ********************/
@@ -30,7 +30,7 @@ static const fnActionHandler ACTION_HANDLERS[VMCALL_ACTION_COUNT] =
 	[VMCALL_ACTION_GET_PROCESS_BASE] = actionGetProcessBase,
 	[VMCALL_ACTION_READ_USER_MEMORY] = actionReadUserMemory,
 	[VMCALL_ACTION_WRITE_USER_MEMORY] = actionWriteUserMemory,
-	[VMCALL_ACTION_SHADOW] = actionShadow,
+	[VMCALL_ACTION_SHADOW_KERNEL] = actionShadowKernel,
 };
 
 /******************** Public Code ********************/
@@ -241,7 +241,7 @@ static NTSTATUS actionWriteUserMemory(PVOID buffer, SIZE_T bufferSize)
 	return status;
 }
 
-static NTSTATUS actionShadow(PVOID buffer, SIZE_T bufferSize)
+static NTSTATUS actionShadowKernel(PVOID buffer, SIZE_T bufferSize)
 {
 	UNREFERENCED_PARAMETER(buffer);
 	UNREFERENCED_PARAMETER(bufferSize);

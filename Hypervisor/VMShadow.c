@@ -90,6 +90,12 @@ BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
 				result = TRUE;
 			}
 		}
+		else
+		{
+			/* TODO: Just for debugging, at the moment we haven't added in monitored PTE handling,
+			 *		 If a PTE we are monitoring gets paged out, this will trigger. */
+			DbgBreakPoint();
+		}
 	}
 
 	return result;

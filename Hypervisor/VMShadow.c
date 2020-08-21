@@ -100,7 +100,7 @@ BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData)
 	/* Check if caused by a MOV CR3, REG */
 	if (VMX_EXIT_QUALIFICATION_REGISTER_CR3 == exitQualification.ControlRegister)
 	{
-		//if (VMX_EXIT_QUALIFICATION_ACCESS_MOV_TO_CR == exitQualification.AccessType)
+		if (VMX_EXIT_QUALIFICATION_ACCESS_MOV_TO_CR == exitQualification.AccessType)
 		{
 			///* MOV CR3, XXX has taken place, this indicates a new page table has been loaded.
 			// * We should iterate through all of the shadow pages and ensure RW pages are all
@@ -109,15 +109,25 @@ BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData)
 			//setAllShadowsToReadWrite(&lpData->eptConfig);
 			//invalidateEPT(&lpData->eptConfig);
 
+			/* Set the guest CR3 register, to the value of the general purpose register. */
+			ULONG64* registerList = &lpData->context.Rax;
+
+			ULONG64 registerValue;
+			if (VMX_EXIT_QUALIFICATION_GENREG_RSP == exitQualification.GeneralPurposeRegister)
+			{
+				__vmx_vmread(VMCS_GUEST_RSP, &registerValue);
+			}
+			else
+			{
+				registerValue = registerList[exitQualification.GeneralPurposeRegister] & ~(1ULL << 63);
+			}
+
+			__vmx_vmwrite(VMCS_GUEST_CR3, registerValue);
+
 			/* Flush the TLB for the current logical processor. */
 			INVVPID_DESCRIPTOR descriptor = { 0 };
 			descriptor.Vpid = 1;
 			__invvpid(InvvpidSingleContextRetainingGlobals, &descriptor);
-
-			/* Set the guest CR3 register, to the value of the general purpose register. */
-			ULONG64* registerList = &lpData->context.Rax;
-			ULONG64 registerValue = registerList[exitQualification.GeneralPurposeRegister] & ~(1ULL << 63);
-			__vmx_vmwrite(VMCS_GUEST_CR3, registerValue);
 		}
 	}
 

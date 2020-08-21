@@ -17,6 +17,11 @@ include ksamd64.inc
 		ret
 	LEAF_END __invept, _TEXT$00
 
+	LEAF_ENTRY __invvpid, _TEXT$00
+		invvpid rcx, OWORD PTR[rdx]
+		ret
+	LEAF_END __invvpid, _TEXT$00
+
     LEAF_ENTRY _RestoreContext, _TEXT$00
         movaps  xmm0, CxXmm0[rcx]   ;
         movaps  xmm1, CxXmm1[rcx]   ;

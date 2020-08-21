@@ -22,7 +22,7 @@ static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physPTE)
 static NTSTATUS hidePage(PEPT_CONFIG eptConfig, PEPROCESS targetProcess, PHYSICAL_ADDRESS targetPA, PVOID executePage);
 static PEPT_SHADOW_PAGE findShadow(PEPT_CONFIG eptConfig, UINT64 guestPA);
 static void setAllShadowsToReadWrite(PEPT_CONFIG eptConfig);
-static void reloadEPT(PEPT_CONFIG eptConfig);
+static void invalidateEPT(PEPT_CONFIG eptConfig);
 
 /******************** Public Code ********************/
 
@@ -101,19 +101,23 @@ BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData)
 	if ((VMX_EXIT_QUALIFICATION_ACCESS_MOV_TO_CR == exitQualification.AccessType) &&
 		(VMX_EXIT_QUALIFICATION_REGISTER_CR3 == exitQualification.ControlRegister))
 	{
-		/* MOV CR3, XXX has taken place, this indicates a new page table has been loaded.
-		 * We should iterate through all of the shadow pages and ensure RW pages are all
-		 * set instead of execute. That way if an execute happens on one, the target
-		 * will flip to the right execute entry later. */
-		setAllShadowsToReadWrite(&lpData->eptConfig);
-		reloadEPT(&lpData->eptConfig);
+		/* Set the guest CR3 register, to the value of the general purpose register. */
+		ULONG64* registerList = &lpData->context.Rax;
+		ULONG64 registerValue = registerList[exitQualification.GeneralPurposeRegister];
+		__vmx_vmwrite(VMCS_GUEST_CR3, registerValue);
+
+		/* Flush the TLB for the current logical processor. */
+		USHORT processorVPID = (USHORT)(KeGetCurrentProcessorNumberEx(NULL) + 1);
+		INVVPID_DESCRIPTOR descriptor = { 0 };
+		__invvpid(processorVPID, &descriptor);
+
+		///* MOV CR3, XXX has taken place, this indicates a new page table has been loaded.
+		// * We should iterate through all of the shadow pages and ensure RW pages are all
+		// * set instead of execute. That way if an execute happens on one, the target
+		// * will flip to the right execute entry later depending if it is a targetted process or not. */
+		//setAllShadowsToReadWrite(&lpData->eptConfig);
+		//invalidateEPT(&lpData->eptConfig);
 	}
-
-	/* Set the guest CR3 register, to the value of the general purpose register. */
-	ULONG64* registerList = &lpData->context.Rax;
-	ULONG64 registerValue = registerList[exitQualification.GeneralPurposeRegister];
-
-	__vmx_vmwrite(VMCS_GUEST_CR3, registerValue);
 
 	return TRUE;
 }
@@ -132,7 +136,7 @@ NTSTATUS VMShadow_hidePageAsRoot(
 	if (NT_SUCCESS(status) && (TRUE == hypervisorRunning))
 	{
 		/* We have modified EPT layout, therefore flush and reload. */
-		reloadEPT(eptConfig);
+		invalidateEPT(eptConfig);
 	}
 
 	return status;
@@ -370,7 +374,7 @@ static void setAllShadowsToReadWrite(PEPT_CONFIG eptConfig)
 	}
 }
 
-static void reloadEPT(PEPT_CONFIG eptConfig)
+static void invalidateEPT(PEPT_CONFIG eptConfig)
 {
 	INVEPT_DESCRIPTOR eptDescriptor;
 

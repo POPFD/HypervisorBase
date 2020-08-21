@@ -19,7 +19,7 @@
 
 /******************** Module Prototypes ********************/
 static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physPTE);
-static NTSTATUS hidePage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS targetPA, PVOID executePage);
+static NTSTATUS hidePage(PEPT_CONFIG eptConfig, PEPROCESS targetProcess, PHYSICAL_ADDRESS targetPA, PVOID executePage);
 static PEPT_SHADOW_PAGE findShadow(PEPT_CONFIG eptConfig, UINT64 guestPA);
 
 /******************** Public Code ********************/
@@ -49,8 +49,26 @@ BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
 			{
 				DEBUG_PRINT("Attempted execute, switching to executable page.\r\n");
 
-				/* If so, we update the PML1E so that the execute only page is visible to the guest. */
-				foundShadow->targetPML1E->Flags = foundShadow->executePML1E.Flags;
+				/* Check to see if target process matches. */
+				PEPROCESS currentProcess = PsGetCurrentProcess();
+
+				if ((NULL == foundShadow->targetProcess) || (currentProcess == foundShadow->targetProcess))
+				{
+					/* TODO: Switch to the modified execute page, we will use MTF tracing to
+					*		 know when to put it back to the RW only page. */
+
+					/* If so, we update the PML1E so that the execute only page is visible to the guest. */
+					//foundShadow->targetPML1E->Flags = foundShadow->executePML1E.Flags;
+				}
+				else
+				{
+					/* TODO: Switch to the original execute page, we will use MTF tracing to
+					 *		 know when to put it back to the RW only page. */
+
+					//foundShadow->targetPML1E->Flags = foundShadow->readWritePML1E.Flags;
+					//foundShadow->targetPML1E->ExecuteAccess = 1;
+				}
+
 
 				result = TRUE;
 			}
@@ -79,7 +97,7 @@ NTSTATUS VMShadow_hidePageAsRoot(
 {
 	NTSTATUS status = STATUS_INVALID_PARAMETER;
 
-	status = hidePage(eptConfig, targetPA, payloadPage);
+	status = hidePage(eptConfig, NULL, targetPA, payloadPage);
 
 	if (NT_SUCCESS(status) && (TRUE == hypervisorRunning))
 	{
@@ -119,7 +137,7 @@ NTSTATUS VMShadow_hideExecInProcess(
 			if (NT_SUCCESS(status))
 			{
 				/* Hide the executable page, for that page only. */
-				status = hidePage(eptConfig, physTargetVA, execVA);
+				status = hidePage(eptConfig, targetProcess, physTargetVA, execVA);
 				if (NT_SUCCESS(status))
 				{
 					/* As we are attempting to hide exec memory in a process,
@@ -197,7 +215,7 @@ static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physPTE)
 	return status;
 }
 
-static NTSTATUS hidePage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS targetPA, PVOID executePage)
+static NTSTATUS hidePage(PEPT_CONFIG eptConfig, PEPROCESS targetProcess, PHYSICAL_ADDRESS targetPA, PVOID executePage)
 {
 	NTSTATUS status;
 
@@ -217,8 +235,12 @@ static NTSTATUS hidePage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS targetPA, PVOID
 				/* Zero the newly allocated page config. */
 				RtlZeroMemory(shadowConfig, sizeof(EPT_SHADOW_PAGE));
 
-				/* Store the physical address of the targeted page. */
-				shadowConfig->physicalBaseAddress.QuadPart = (LONGLONG)PAGE_ALIGN(targetPA.QuadPart);
+				/* Store the physical address of the targeted page & offset into page. */
+				shadowConfig->physicalAlign.QuadPart = (LONGLONG)PAGE_ALIGN(targetPA.QuadPart);
+				shadowConfig->pageOffset = ADDRMASK_EPT_PML1_OFFSET(targetPA.QuadPart);
+
+				/* Store the target process. */
+				shadowConfig->targetProcess = targetProcess;
 
 				/* Store a pointer to the PML1E we will be modifying. */
 				shadowConfig->targetPML1E = EPT_getPML1EFromAddress(eptConfig, targetPA);
@@ -288,7 +310,7 @@ static PEPT_SHADOW_PAGE findShadow(PEPT_CONFIG eptConfig, UINT64 guestPA)
 
 		/* If the page hook's base address matches where the current guest state is we can assume that
 		* the violation was caused by this hook. Therefor we switch pages appropriately. */
-		if (pageHook->physicalBaseAddress.QuadPart == (LONGLONG)PAGE_ALIGN(guestPA))
+		if (pageHook->physicalAlign.QuadPart == (LONGLONG)PAGE_ALIGN(guestPA))
 		{
 			result = pageHook;
 			break;

@@ -219,7 +219,7 @@ static void setupVMCS(PVMM_DATA lpData)
 	/*
 	* Enable support for RDTSCP and XSAVES/XRESTORES in the guest. Windows 10
 	* makes use of both of these instructions if the CPU supports it. By using
-	* ShvUtilAdjustMsr, these options will be ignored if this processor does
+	* MSR_adjustMSR, these options will be ignored if this processor does
 	* not actually support the instructions to begin with.
 	*
 	* Also enable EPT support, for additional performance and ability to trap
@@ -351,6 +351,7 @@ static void setupVMCS(PVMM_DATA lpData)
 	*/
 	__vmx_vmwrite(VMCS_HOST_CR3, lpData->hostPML4Base);
 	__vmx_vmwrite(VMCS_GUEST_CR3, controlRegisters->Cr3);
+	__vmx_vmwrite(VMCS_CTRL_CR3_TARGET_COUNT, 0);
 
 	/* Load CR4 */
 	__vmx_vmwrite(VMCS_HOST_CR4, controlRegisters->Cr4);

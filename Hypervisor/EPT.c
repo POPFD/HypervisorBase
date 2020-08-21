@@ -26,7 +26,10 @@ void EPT_initialise(PEPT_CONFIG eptConfig, const PMTRR_RANGE mtrrTable)
 	/* Initialise the linked list used for holding split pages. */
 	InitializeListHead(&eptConfig->dynamicSplitList);
 
-	/* Initialise the linked list user for holding all the hooks. */
+	/* Initialise the linked list used for holding all monitored PTE's. */
+	InitializeListHead(&eptConfig->monitoredPTEList);
+
+	/* Initialise the linked list used for holding all the hooks. */
 	InitializeListHead(&eptConfig->pageShadowList);
 
 	/* Create the EPT pointer for the structure. */

@@ -18,8 +18,7 @@
 
 
 /******************** Module Prototypes ********************/
-static NTSTATUS getPhysFromVirtual(PEPROCESS targetProcess, PVOID virtualAddress, PHYSICAL_ADDRESS* physicalAddress);
-static NTSTATUS getPTEPhysAddressFromVA(PEPROCESS targetProcess, PVOID virtualAddress, PHYSICAL_ADDRESS* physPTE);
+
 static UINT64 getTableBase(PEPROCESS process);
 static NTSTATUS readPhysicalAddress(PHYSICAL_ADDRESS sourceAddress, SIZE_T size, void* targetAddress);
 static NTSTATUS writePhysicalAddress(PHYSICAL_ADDRESS targetAddress, SIZE_T size, void* sourceAddress);
@@ -37,7 +36,7 @@ NTSTATUS MemManage_changeMemoryProt(PEPROCESS process, PUINT8 baseAddress, SIZE_
 	{
 		/* Get the physical address of the page table entry. */
 		PHYSICAL_ADDRESS physPTE;
-		status = getPTEPhysAddressFromVA(process, currentVA, &physPTE);
+		status = MemManage_getPTEPhysAddressFromVA(process, currentVA, &physPTE);
 		if (NT_SUCCESS(status))
 		{
 			/* Read the original page table entry. */
@@ -70,7 +69,7 @@ NTSTATUS MemManage_readVirtualAddress(PEPROCESS targetProcess, void* sourceVA, S
 
 	/* Get the physical address of the source. */
 	PHYSICAL_ADDRESS targetSource;
-	status = getPhysFromVirtual(targetProcess, sourceVA, &targetSource);
+	status = MemManage_getPhysFromVirtual(targetProcess, sourceVA, &targetSource);
 	if (NT_SUCCESS(status))
 	{
 		status = readPhysicalAddress(targetSource, size, targetVA);
@@ -85,7 +84,7 @@ NTSTATUS MemManage_writeVirtualAddress(PEPROCESS targetProcess, void* targetVA, 
 
 	/* Get the physical address of the target. */
 	PHYSICAL_ADDRESS targetPhysical;
-	status = getPhysFromVirtual(targetProcess, targetVA, &targetPhysical);
+	status = MemManage_getPhysFromVirtual(targetProcess, targetVA, &targetPhysical);
 	if (NT_SUCCESS(status))
 	{
 		status = writePhysicalAddress(targetPhysical, size, sourceVA);
@@ -94,13 +93,11 @@ NTSTATUS MemManage_writeVirtualAddress(PEPROCESS targetProcess, void* targetVA, 
 	return status;
 }
 
-/******************** Module Code ********************/
-
-static NTSTATUS getPhysFromVirtual(PEPROCESS targetProcess, PVOID virtualAddress, PHYSICAL_ADDRESS* physicalAddress)
+NTSTATUS MemManage_getPhysFromVirtual(PEPROCESS targetProcess, PVOID virtualAddress, PHYSICAL_ADDRESS* physicalAddress)
 {
 	/* Find the physical address of the PTE for the virtual address. */
 	PHYSICAL_ADDRESS physPTE;
-	NTSTATUS status = getPTEPhysAddressFromVA(targetProcess, virtualAddress, &physPTE);
+	NTSTATUS status = MemManage_getPTEPhysAddressFromVA(targetProcess, virtualAddress, &physPTE);
 	if (NT_SUCCESS(status))
 	{
 		/* Read the PTE. */
@@ -116,7 +113,7 @@ static NTSTATUS getPhysFromVirtual(PEPROCESS targetProcess, PVOID virtualAddress
 	return status;
 }
 
-static NTSTATUS getPTEPhysAddressFromVA(PEPROCESS targetProcess, PVOID virtualAddress, PHYSICAL_ADDRESS* physPTE)
+NTSTATUS MemManage_getPTEPhysAddressFromVA(PEPROCESS targetProcess, PVOID virtualAddress, PHYSICAL_ADDRESS* physPTE)
 {
 	NTSTATUS status;
 
@@ -182,6 +179,8 @@ static NTSTATUS getPTEPhysAddressFromVA(PEPROCESS targetProcess, PVOID virtualAd
 
 	return status;
 }
+
+/******************** Module Code ********************/
 
 static UINT64 getTableBase(PEPROCESS process)
 {

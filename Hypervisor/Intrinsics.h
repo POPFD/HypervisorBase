@@ -12,8 +12,8 @@
 
 VOID _str(_In_ UINT16* Tr);
 VOID _sldt(_In_ UINT16* Ldtr);
-VOID __invept(UINT64 Type, INVEPT_DESCRIPTOR* Descriptor);
-VOID __invvpid(UINT64 Type, INVVPID_DESCRIPTOR* Descriptor);
+VOID __invept(INVEPT_TYPE Type, INVEPT_DESCRIPTOR* Descriptor);
+VOID __invvpid(INVVPID_TYPE Type, INVVPID_DESCRIPTOR* Descriptor);
 
 DECLSPEC_NORETURN
 VOID

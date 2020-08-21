@@ -12,7 +12,7 @@
 
 /******************** Public Prototypes ********************/
 BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig);
-BOOLEAN VMShadow_handleMTFExit(PEPT_CONFIG eptConfig);
+BOOLEAN VMShadow_handleMovCR(PEPT_CONFIG eptConfig);
 
 NTSTATUS VMShadow_hideExecInProcess(
 	PEPT_CONFIG eptConfig,

@@ -21,6 +21,8 @@
 static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physPTE);
 static NTSTATUS hidePage(PEPT_CONFIG eptConfig, PEPROCESS targetProcess, PHYSICAL_ADDRESS targetPA, PVOID executePage);
 static PEPT_SHADOW_PAGE findShadow(PEPT_CONFIG eptConfig, UINT64 guestPA);
+static void setAllShadowsToReadWrite(PEPT_CONFIG eptConfig);
+static void reloadEPT(PEPT_CONFIG eptConfig);
 
 /******************** Public Code ********************/
 
@@ -49,11 +51,6 @@ BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
 			{
 				DEBUG_PRINT("Attempted execute, switching to executable page.\r\n");
 
-				if (FALSE == KD_DEBUGGER_NOT_PRESENT)
-				{
-					DbgBreakPoint();
-				}
-
 				/* Check to see if target process matches. */
 				PEPROCESS currentProcess = PsGetCurrentProcess();
 
@@ -69,20 +66,6 @@ BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
 					 * know when to put it back to the RW only page. */
 					foundShadow->targetPML1E->Flags = foundShadow->executeNotTargetPML1E.Flags;
 				}
-
-				/* Store the PML1E in the EPT config, so we can determine in the MTF handler,
-				 * when we have exited the page. */
-				eptConfig->activeShadowPage = foundShadow;
-
-				/* Now we must use MTF tracing so we know we're still executing in
-				 * the page that has been decided to be set. In the MTF trace handler,
-				 * we will check to see if RIP is within page, if not then we will restore
-				 * the target page back to the RW only entry. */
-				UINT64 procControls;
-				__vmx_vmread(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, &procControls);
-
-				procControls |= IA32_VMX_PROCBASED_CTLS_MONITOR_TRAP_FLAG_FLAG;
-				__vmx_vmwrite(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, procControls);
 
 				result = TRUE;
 			}
@@ -108,46 +91,34 @@ BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
 	return result;
 }
 
-BOOLEAN VMShadow_handleMTFExit(PEPT_CONFIG eptConfig)
+BOOLEAN VMShadow_handleMovCR(PEPT_CONFIG eptConfig)
 {
-	/* Set to false, as we haven't successfully handled trap yet. */
-	BOOLEAN result = FALSE;
+	BOOLEAN result;
+
+	/* Cast the exit qualification to it's proper type. */
+	VMX_EXIT_QUALIFICATION_MOV_CR exitQualification;
+	__vmx_vmread(VMCS_EXIT_QUALIFICATION, &exitQualification.Flags);
 
 	if (FALSE == KD_DEBUGGER_NOT_PRESENT)
 	{
 		DbgBreakPoint();
 	}
 
-	/* Get the physical address that the VMCS is at. */
-	SIZE_T guestPA;
-	__vmx_vmread(VMCS_GUEST_PHYSICAL_ADDRESS, &guestPA);
-	DEBUG_PRINT("MTF exit at: 0xI64X\r\n", guestPA);
-
-	/* Check to see if the new address is still within the active shadow
-	 * page, if it is then we must continue MTF tracing. */
-	SIZE_T activeShadowStart = (SIZE_T)eptConfig->activeShadowPage->physicalAlign.QuadPart;
-	SIZE_T activeShadowEnd = (SIZE_T)eptConfig->activeShadowPage->physicalAlign.QuadPart + PAGE_SIZE;
-
-	if ((guestPA >= activeShadowStart) && (guestPA <= activeShadowEnd))
+	if ((VMX_EXIT_QUALIFICATION_ACCESS_MOV_TO_CR == exitQualification.AccessType) &&
+		(VMX_EXIT_QUALIFICATION_REGISTER_CR3 == exitQualification.ControlRegister))
 	{
-		/* We are okay, no need to do anything, just indicate handled correctly. */
+		/* MOV CR3, XXX has taken place, this indicates a new page table has been loaded.
+		 * We should iterate through all of the shadow pages and ensure RW pages are all
+		 * set instead of execute. That way if an execute happens on one, the target
+		 * will flip to the right execute entry later. */
+		setAllShadowsToReadWrite(eptConfig);
+		reloadEPT(eptConfig);
+
 		result = TRUE;
 	}
 	else
 	{
-		/* We are outside, therefore we must disable MTF trapping. */
-		UINT64 procControls;
-		__vmx_vmread(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, &procControls);
-
-		procControls &= ~IA32_VMX_PROCBASED_CTLS_MONITOR_TRAP_FLAG_FLAG;
-		__vmx_vmwrite(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, procControls);
-
-		/* Revert the EPT entry back to RW page. */
-		eptConfig->activeShadowPage->targetPML1E->Flags = eptConfig->activeShadowPage->readWritePML1E.Flags;
-
-		/* Clear the active shadow page. */
-		eptConfig->activeShadowPage = NULL;
-
+		/* Handled correctly if it is not that, we just do nothing. */
 		result = TRUE;
 	}
 
@@ -167,11 +138,8 @@ NTSTATUS VMShadow_hidePageAsRoot(
 
 	if (NT_SUCCESS(status) && (TRUE == hypervisorRunning))
 	{
-		INVEPT_DESCRIPTOR eptDescriptor;
-
-		eptDescriptor.EptPointer = eptConfig->eptPointer.Flags;
-		eptDescriptor.Reserved = 0;
-		__invept(1, &eptDescriptor);
+		/* We have modified EPT layout, therefore flush and reload. */
+		reloadEPT(eptConfig);
 	}
 
 	return status;
@@ -392,4 +360,28 @@ static PEPT_SHADOW_PAGE findShadow(PEPT_CONFIG eptConfig, UINT64 guestPA)
 	}
 
 	return result;
+}
+
+static void setAllShadowsToReadWrite(PEPT_CONFIG eptConfig)
+{
+	/* Keep going through the whole linked list, until the flink points back to the root. */
+	for (PLIST_ENTRY currentEntry = eptConfig->pageShadowList.Flink;
+		currentEntry != &eptConfig->pageShadowList;
+		currentEntry = currentEntry->Flink)
+	{
+		/* The CONTAINING_RECORD macro can uses the address of the linked list and then subtracts where the
+		* list entry is stored in the structure from the address to give us the address of the parent. */
+		PEPT_SHADOW_PAGE pageHook = CONTAINING_RECORD(currentEntry, EPT_SHADOW_PAGE, listEntry);
+
+		pageHook->targetPML1E->Flags = pageHook->readWritePML1E.Flags;
+	}
+}
+
+static void reloadEPT(PEPT_CONFIG eptConfig)
+{
+	INVEPT_DESCRIPTOR eptDescriptor;
+
+	eptDescriptor.EptPointer = eptConfig->eptPointer.Flags;
+	eptDescriptor.Reserved = 0;
+	__invept(1, &eptDescriptor);
 }

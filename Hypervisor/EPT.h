@@ -119,6 +119,10 @@ typedef struct _EPT_CONFIG
 	/* List of all the PAGE shadows in the system. */
 	LIST_ENTRY pageShadowList;
 
+	/* Pointer to the current VM shadow page entry that is causing
+	 * the MTF exits, if NULL, there is none. */
+	PEPT_SHADOW_PAGE activeShadowPage;
+
 	/* EPT pointer that will be used for the VMCS. */
 	EPT_POINTER eptPointer;
 } EPT_CONFIG, *PEPT_CONFIG;

@@ -157,6 +157,21 @@ static void handleExitReason(PVMM_DATA lpData, PCONTEXT guestContext)
 			break;
 		}
 
+		case VMX_EXIT_REASON_MONITOR_TRAP_FLAG:
+		{
+			if (TRUE == VMShadow_handleMTFExit(&lpData->eptConfig))
+			{
+				/* If we have handled the monitor trap flag correctly, move to next instruction. */
+				moveToNextInstruction = TRUE;
+			}
+			else
+			{
+				DEBUG_PRINT("Unable to handle MTF exit.\r\n");
+			}
+
+			break;
+		}
+
 		case VMX_EXIT_REASON_EXECUTE_INVD:
 		{
 			__wbinvd();

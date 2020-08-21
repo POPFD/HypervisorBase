@@ -168,7 +168,7 @@ static ULONG_PTR routineHideCodeOnEachCore(ULONG_PTR Argument)
 	PVM_PARAM_SHADOW paramShadow = (PVM_PARAM_SHADOW)Argument;
 
 	VMCALL_COMMAND command;
-	command.action = VMCALL_ACTION_SHADOW;
+	command.action = VMCALL_ACTION_SHADOW_KERNEL;
 	command.buffer = paramShadow;
 	command.bufferSize = sizeof(VM_PARAM_SHADOW);
 

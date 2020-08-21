@@ -91,19 +91,13 @@ BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
 	return result;
 }
 
-BOOLEAN VMShadow_handleMovCR(PEPT_CONFIG eptConfig)
+BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData)
 {
-	BOOLEAN result;
-
-	/* Cast the exit qualification to it's proper type. */
+	/* Cast the exit qualification to its proper type. */
 	VMX_EXIT_QUALIFICATION_MOV_CR exitQualification;
 	__vmx_vmread(VMCS_EXIT_QUALIFICATION, &exitQualification.Flags);
 
-	if (FALSE == KD_DEBUGGER_NOT_PRESENT)
-	{
-		DbgBreakPoint();
-	}
-
+	/* Check if caused by a MOV CR3, REG*/
 	if ((VMX_EXIT_QUALIFICATION_ACCESS_MOV_TO_CR == exitQualification.AccessType) &&
 		(VMX_EXIT_QUALIFICATION_REGISTER_CR3 == exitQualification.ControlRegister))
 	{
@@ -111,18 +105,17 @@ BOOLEAN VMShadow_handleMovCR(PEPT_CONFIG eptConfig)
 		 * We should iterate through all of the shadow pages and ensure RW pages are all
 		 * set instead of execute. That way if an execute happens on one, the target
 		 * will flip to the right execute entry later. */
-		setAllShadowsToReadWrite(eptConfig);
-		reloadEPT(eptConfig);
-
-		result = TRUE;
-	}
-	else
-	{
-		/* Handled correctly if it is not that, we just do nothing. */
-		result = TRUE;
+		setAllShadowsToReadWrite(&lpData->eptConfig);
+		reloadEPT(&lpData->eptConfig);
 	}
 
-	return result;
+	/* Set the guest CR3 register, to the value of the general purpose register. */
+	ULONG64* registerList = &lpData->context.Rax;
+	ULONG64 registerValue = registerList[exitQualification.GeneralPurposeRegister];
+
+	__vmx_vmwrite(VMCS_GUEST_CR3, registerValue);
+
+	return TRUE;
 }
 
 NTSTATUS VMShadow_hidePageAsRoot(

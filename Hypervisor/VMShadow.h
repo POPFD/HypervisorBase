@@ -1,5 +1,6 @@
 #pragma once
 #include <wdm.h>
+#include "VMM.h"
 #include "EPT.h"
 
 /******************** Public Defines ********************/
@@ -12,7 +13,7 @@
 
 /******************** Public Prototypes ********************/
 BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig);
-BOOLEAN VMShadow_handleMovCR(PEPT_CONFIG eptConfig);
+BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData);
 
 NTSTATUS VMShadow_hideExecInProcess(
 	PEPT_CONFIG eptConfig,

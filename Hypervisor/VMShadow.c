@@ -1,7 +1,7 @@
 #include <ntifs.h>
 #include <intrin.h>
 #include "VMShadow.h"
-#include "VMCall_Common.h"
+#include "MemManage.h"
 #include "Intrinsics.h"
 #include "Debug.h"
 
@@ -18,7 +18,7 @@
 
 
 /******************** Module Prototypes ********************/
-static ULONG_PTR routineHideCodeOnEachCore(ULONG_PTR Argument);
+static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physPTE);
 static NTSTATUS hidePage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS targetPA, PVOID executePage);
 static PEPT_SHADOW_PAGE findShadow(PEPT_CONFIG eptConfig, UINT64 guestPA);
 
@@ -93,65 +93,47 @@ NTSTATUS VMShadow_hidePageAsRoot(
 	return status;
 }
 
-NTSTATUS VMShadow_hideCodeAsGuest(
-	PUINT8 targetStart,
-	PUINT8 payloadStart,
-	ULONG payloadSize
+NTSTATUS VMShadow_hideExecInProcess(
+	PEPT_CONFIG eptConfig,
+	PEPROCESS targetProcess,
+	PUINT8 targetVA,
+	PUINT8 execVA
 )
 {
-	NTSTATUS status = STATUS_INVALID_PARAMETER;
+	NTSTATUS status;
 
-	/* Calculate where in the first page of the target the payload will be placed. */
-	ULONG offsetIntoTarget = ADDRMASK_EPT_PML1_OFFSET((UINT64)targetStart);
-
-	/* Calculate number of pages to copy, this value is made so beginning and end pages
-	* contain the original bytes still. */
-	ULONG pagesToShadow = ((offsetIntoTarget + payloadSize) / PAGE_SIZE) + 1;
-	ULONG totalBytesToShadow = pagesToShadow * PAGE_SIZE;
-
-	PUINT8 alignedTarget = PAGE_ALIGN(targetStart);
-
-	/* Allocate a buffer that will be our shadow payload. */
-	PUINT8 executePages = (PUINT8)ExAllocatePool(NonPagedPoolNx, totalBytesToShadow);
-	if (NULL != executePages)
+	/* Get the physical address of the page table entry that is used for the target VA. */
+	PHYSICAL_ADDRESS physTargetPTE;
+	status = MemManage_getPTEPhysAddressFromVA(targetProcess, targetVA, &physTargetPTE);
+	if (NT_SUCCESS(status))
 	{
-		/* Copy the original bytes into the execute page. */
-		RtlCopyMemory(executePages, alignedTarget, totalBytesToShadow);
-
-		/* Copy the executable payload over the correct bytes. */
-		RtlCopyMemory(executePages + offsetIntoTarget, payloadStart, payloadSize);
-
-		/* Now iterate through each of the pages and shadow them. */
-		ULONG bytesShadowed = 0;
-		while (bytesShadowed < totalBytesToShadow)
+		/* Add to the list of monitored page table entries. */
+		status = addMonitoredPTE(eptConfig, physTargetPTE);
+		if (NT_SUCCESS(status))
 		{
-			/* We need to break from the guest back up to the hypervisor,
-			* This is done by sending a IPI notification to each core, which
-			* will run a function to enter the VMExit handler and add the hook.
-			* The physical address has to be sent rather than virtual as the
-			* other processors will have a different page table when in VMX root. */
-			VM_PARAM_SHADOW apHidePage;
-			apHidePage.physTarget = MmGetPhysicalAddress(alignedTarget + bytesShadowed).QuadPart;
-			apHidePage.payloadPage = executePages + bytesShadowed;
-
-			status = (NTSTATUS)KeIpiGenericCall(routineHideCodeOnEachCore, (ULONG_PTR)&apHidePage);
-
+			/* Calculate the physical address of the target VA,
+			 * I know we could calculate this by reading the PTE here and
+			 * calculating, however we have a function for this already (at the expense of reading PTE again.. */
+			PHYSICAL_ADDRESS physTargetVA;
+			status = MemManage_getPhysFromVirtual(targetProcess, targetVA, &physTargetVA);
 			if (NT_SUCCESS(status))
 			{
-				bytesShadowed += PAGE_SIZE;
-			}
-			else
-			{
-				/* Something went wrong while hiding the page. */
-				break;
+				/* Hide the executable page, for that page only. */
+				status = hidePage(eptConfig, physTargetVA, execVA);
+				if (NT_SUCCESS(status))
+				{
+					/* As we are attempting to hide exec memory in a process,
+					 * it's safe to say the hypervisor & EPT is already running.
+					 * Therefore we should invalidate the already existing EPT to flush
+					 * in the new config. */
+					INVEPT_DESCRIPTOR eptDescriptor;
+
+					eptDescriptor.EptPointer = eptConfig->eptPointer.Flags;
+					eptDescriptor.Reserved = 0;
+					__invept(1, &eptDescriptor);
+				}
 			}
 		}
-
-		ExFreePool(executePages);
-	}
-	else
-	{
-		status = STATUS_NO_MEMORY;
 	}
 
 	return status;
@@ -159,20 +141,60 @@ NTSTATUS VMShadow_hideCodeAsGuest(
 
 /******************** Module Code ********************/
 
-static ULONG_PTR routineHideCodeOnEachCore(ULONG_PTR Argument)
+static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physPTE)
 {
-	/* This logical processor now needs to VMCALL to
-	* tell the hypervisor to shadow the following page.
-	* The parameters for the VMCall are stored in the argument
-	* of the IPI notification so we need to send them. */
-	PVM_PARAM_SHADOW paramShadow = (PVM_PARAM_SHADOW)Argument;
+	NTSTATUS status;
 
-	VMCALL_COMMAND command;
-	command.action = VMCALL_ACTION_SHADOW_KERNEL;
-	command.buffer = paramShadow;
-	command.bufferSize = sizeof(VM_PARAM_SHADOW);
+	if (0ULL != physPTE.QuadPart)
+	{
+		PEPT_MONITORED_PTE configMonPTE = (PEPT_MONITORED_PTE)ExAllocatePool(NonPagedPoolNx, sizeof(EPT_MONITORED_PTE));
+		if (NULL != configMonPTE)
+		{
+			/* As we have set up PDT to 2MB large pages we need to split this for performance.
+			* The lowest we can split it to is the size of a page, 2MB = 512 * 4096 blocks. */
+			status = EPT_splitLargePage(eptConfig, physPTE);
 
-	return (ULONG_PTR)VMCALL_actionHost(VMCALL_KEY, &command);
+			/* Check to see if the split was successful, or has already been split. */
+			if ((NT_SUCCESS(status)) || (STATUS_ALREADY_COMPLETE == status))
+			{
+				/* Store the aligned physical address of where the PTE exists,
+				 * also store it's offset, as we may have multiple monitored PTE's
+				 * in the same page. */
+				configMonPTE->physAlignPTE.QuadPart = (LONGLONG)PAGE_ALIGN(physPTE.QuadPart);
+				configMonPTE->pageOffset = ADDRMASK_EPT_PML1_OFFSET(physPTE.QuadPart);
+
+				/* Store a pointer to the PML1E we will be modifying. */
+				configMonPTE->targetPML1E = EPT_getPML1EFromAddress(eptConfig, physPTE);
+				if (NULL != configMonPTE->targetPML1E)
+				{
+					/* Set the PML1E so that it is not writable, this will cause a VMEXIT
+					 * if an attempt to write to the guest PTE takes place (paging change of phys address). */
+					configMonPTE->targetPML1E->WriteAccess = 0;
+
+					/* Add this config to the list of monitored page table entries. */
+					InsertHeadList(&eptConfig->monitoredPTEList, &configMonPTE->listEntry);
+
+					status = STATUS_SUCCESS;
+				}
+				else
+				{
+					/* Unable to get PML1E so free resources we have allocated. */
+					ExFreePool(configMonPTE);
+					status = STATUS_NO_SUCH_MEMBER;
+				}
+			}
+		}
+		else
+		{
+			status = STATUS_NO_MEMORY;
+		}
+	}
+	else
+	{
+		status = STATUS_INVALID_PARAMETER;
+	}
+
+	return status;
 }
 
 static NTSTATUS hidePage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS targetPA, PVOID executePage)

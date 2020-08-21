@@ -56,6 +56,25 @@ typedef struct _EPT_SHADOW_PAGE
 	LIST_ENTRY listEntry;
 } EPT_SHADOW_PAGE, *PEPT_SHADOW_PAGE;
 
+/* Structure that will hold configuration of all monitored page table entries,
+ * this is to account for paging changes on the EPT shadow hooked pages. */
+typedef struct _EPT_MONITORED_PTE
+{
+	/* Aligned physical address of the PTE. */
+	PHYSICAL_ADDRESS physAlignPTE;
+
+	/* Offset into the aligned page that the PTE exists. */
+	SIZE_T pageOffset;
+
+	/* Pointer to the PML1 entry that will be used modified for detection
+	 * of a page table entry write. */
+	PEPT_PML1_ENTRY targetPML1E;
+
+	/* List entry for the monitored PTE, so we can keep a list of all
+	 * monitored page table entries. */
+	LIST_ENTRY listEntry;
+} EPT_MONITORED_PTE, *PEPT_MONITORED_PTE;
+
 /* Structure that will hold the PML1 data for a dynamically split PML2 entry. */
 typedef struct _EPT_DYNAMIC_SPLIT
 {
@@ -85,6 +104,9 @@ typedef struct _EPT_CONFIG
 	/* List of all dynamically split pages (from 2MB to 4KB). This will be used for
 	* when they need to be freed during uninitialisation. */
 	LIST_ENTRY dynamicSplitList;
+
+	/* List of all the monitored PTE's in the system. */
+	LIST_ENTRY monitoredPTEList;
 
 	/* List of all the PAGE shadows in the system. */
 	LIST_ENTRY pageShadowList;

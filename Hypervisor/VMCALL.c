@@ -1,6 +1,7 @@
 #include "VMCALL.h"
 #include "VMCALL_Common.h"
 #include "MemManage.h"
+#include "VMShadow.h"
 #include "Process.h"
 
 /******************** External API ********************/
@@ -8,7 +9,7 @@
 
 /******************** Module Typedefs ********************/
 
-typedef NTSTATUS(*fnActionHandler)(PVOID buffer, SIZE_T bufferSize);
+typedef NTSTATUS(*fnActionHandler)(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize);
 
 /******************** Module Constants ********************/
 
@@ -17,10 +18,11 @@ typedef NTSTATUS(*fnActionHandler)(PVOID buffer, SIZE_T bufferSize);
 
 
 /******************** Module Prototypes ********************/
-static NTSTATUS actionGetProcessBase(PVOID buffer, SIZE_T bufferSize);
-static NTSTATUS actionReadUserMemory(PVOID buffer, SIZE_T bufferSize);
-static NTSTATUS actionWriteUserMemory(PVOID buffer, SIZE_T bufferSize);
-static NTSTATUS actionShadowKernel(PVOID buffer, SIZE_T bufferSize);
+static NTSTATUS actionGetProcessBase(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize);
+static NTSTATUS actionReadUserMemory(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize);
+static NTSTATUS actionWriteUserMemory(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize);
+static NTSTATUS actionShadowUser(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize);
+static NTSTATUS actionShadowKernel(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize);
 
 static NTSTATUS getGuestBuffer(PEPROCESS process, PVOID buffer, SIZE_T bufferSize, PVOID* hostBuffer);
 /******************** Action Handlers ********************/
@@ -30,6 +32,7 @@ static const fnActionHandler ACTION_HANDLERS[VMCALL_ACTION_COUNT] =
 	[VMCALL_ACTION_GET_PROCESS_BASE] = actionGetProcessBase,
 	[VMCALL_ACTION_READ_USER_MEMORY] = actionReadUserMemory,
 	[VMCALL_ACTION_WRITE_USER_MEMORY] = actionWriteUserMemory,
+	[VMCALL_ACTION_SHADOW_USER] = actionShadowUser,
 	[VMCALL_ACTION_SHADOW_KERNEL] = actionShadowKernel,
 };
 
@@ -78,7 +81,7 @@ BOOLEAN VMCALL_handle(PVMM_DATA lpData, PCONTEXT guestContext)
 				/* Call the specific action handler for the command and put the result NTSTATUS into RAX. */
 				if (hostCommandBuffer.action < VMCALL_ACTION_COUNT)
 				{
-					guestContext->Rax = ACTION_HANDLERS[hostCommandBuffer.action](hostParameterBuffer, hostCommandBuffer.bufferSize);
+					guestContext->Rax = ACTION_HANDLERS[hostCommandBuffer.action](lpData, hostParameterBuffer, hostCommandBuffer.bufferSize);
 				}
 				else
 				{
@@ -109,8 +112,9 @@ BOOLEAN VMCALL_handle(PVMM_DATA lpData, PCONTEXT guestContext)
 
 /******************** Module Code ********************/
 
-static NTSTATUS actionGetProcessBase(PVOID buffer, SIZE_T bufferSize)
+static NTSTATUS actionGetProcessBase(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize)
 {
+	UNREFERENCED_PARAMETER(lpData);
 	NTSTATUS status;
 
 	if ((NULL != buffer) && (sizeof(VM_PARAM_GET_PROCESS_BASE) == bufferSize))
@@ -148,8 +152,9 @@ static NTSTATUS actionGetProcessBase(PVOID buffer, SIZE_T bufferSize)
 	return status;
 }
 
-static NTSTATUS actionReadUserMemory(PVOID buffer, SIZE_T bufferSize)
+static NTSTATUS actionReadUserMemory(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize)
 {
+	UNREFERENCED_PARAMETER(lpData);
 	NTSTATUS status;
 
 	if ((NULL != buffer) && (sizeof(VM_PARAM_RW_USER_MEMORY) == bufferSize))
@@ -194,8 +199,9 @@ static NTSTATUS actionReadUserMemory(PVOID buffer, SIZE_T bufferSize)
 	return status;
 }
 
-static NTSTATUS actionWriteUserMemory(PVOID buffer, SIZE_T bufferSize)
+static NTSTATUS actionWriteUserMemory(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize)
 {
+	UNREFERENCED_PARAMETER(lpData);
 	NTSTATUS status;
 
 	if ((NULL != buffer) && (sizeof(VM_PARAM_RW_USER_MEMORY) == bufferSize))
@@ -241,8 +247,62 @@ static NTSTATUS actionWriteUserMemory(PVOID buffer, SIZE_T bufferSize)
 	return status;
 }
 
-static NTSTATUS actionShadowKernel(PVOID buffer, SIZE_T bufferSize)
+static NTSTATUS actionShadowUser(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize)
 {
+	NTSTATUS status;
+
+	if ((NULL != buffer) && (sizeof(VM_PARAM_SHADOW_USER) == bufferSize))
+	{
+		PVM_PARAM_SHADOW_USER params = (PVM_PARAM_SHADOW_USER)buffer;
+
+		/* Get the PEPROCESS of the current process. */
+		PEPROCESS callerProcess;
+		status = PsLookupProcessByProcessId((HANDLE)params->callerProcID, &callerProcess);
+		if (NT_SUCCESS(status))
+		{
+			/* Read the execute page into the buffer. */
+			PUINT8 kernelExecPage = ExAllocatePool(NonPagedPoolNx, PAGE_SIZE);
+			if (NULL != kernelExecPage)
+			{
+				/* Read from the caller process into the kernel buffer, so we know what to shadow. */
+				status = MemManage_readVirtualAddress(callerProcess, params->userExecPageVA, PAGE_SIZE, kernelExecPage);
+				if (NT_SUCCESS(status))
+				{
+					/* Get the PEPROCESS of the target process. */
+					PEPROCESS targetProcess;
+					status = PsLookupProcessByProcessId((HANDLE)params->targetProcID, &targetProcess);
+					if (NT_SUCCESS(status))
+					{
+						/* Tell the VMShadow module to hide the executable page at the specified
+						 * address, for the target process only. */
+						status = VMShadow_hideExecInProcess(&lpData->eptConfig, 
+															targetProcess, 
+															params->userTargetPageVA, 
+															kernelExecPage);
+					}
+				}
+
+				/* Free the copy of the executable page as no longer needed. */
+				ExFreePool(kernelExecPage);
+			}
+			else
+			{
+				status = STATUS_NO_MEMORY;
+			}
+		}
+
+	}
+	else
+	{
+		status = STATUS_INVALID_PARAMETER;
+	}
+
+	return STATUS_UNSUCCESSFUL;
+}
+
+static NTSTATUS actionShadowKernel(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize)
+{
+	UNREFERENCED_PARAMETER(lpData);
 	UNREFERENCED_PARAMETER(buffer);
 	UNREFERENCED_PARAMETER(bufferSize);
 	return STATUS_UNSUCCESSFUL;

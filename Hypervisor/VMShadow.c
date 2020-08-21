@@ -97,26 +97,28 @@ BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData)
 	VMX_EXIT_QUALIFICATION_MOV_CR exitQualification;
 	__vmx_vmread(VMCS_EXIT_QUALIFICATION, &exitQualification.Flags);
 
-	/* Check if caused by a MOV CR3, REG*/
-	if ((VMX_EXIT_QUALIFICATION_ACCESS_MOV_TO_CR == exitQualification.AccessType) &&
-		(VMX_EXIT_QUALIFICATION_REGISTER_CR3 == exitQualification.ControlRegister))
+	/* Check if caused by a MOV CR3, REG */
+	if (VMX_EXIT_QUALIFICATION_REGISTER_CR3 == exitQualification.ControlRegister)
 	{
-		/* Set the guest CR3 register, to the value of the general purpose register. */
-		ULONG64* registerList = &lpData->context.Rax;
-		ULONG64 registerValue = registerList[exitQualification.GeneralPurposeRegister];
-		__vmx_vmwrite(VMCS_GUEST_CR3, registerValue);
+		//if (VMX_EXIT_QUALIFICATION_ACCESS_MOV_TO_CR == exitQualification.AccessType)
+		{
+			///* MOV CR3, XXX has taken place, this indicates a new page table has been loaded.
+			// * We should iterate through all of the shadow pages and ensure RW pages are all
+			// * set instead of execute. That way if an execute happens on one, the target
+			// * will flip to the right execute entry later depending if it is a targetted process or not. */
+			//setAllShadowsToReadWrite(&lpData->eptConfig);
+			//invalidateEPT(&lpData->eptConfig);
 
-		/* Flush the TLB for the current logical processor. */
-		USHORT processorVPID = (USHORT)(KeGetCurrentProcessorNumberEx(NULL) + 1);
-		INVVPID_DESCRIPTOR descriptor = { 0 };
-		__invvpid(processorVPID, &descriptor);
+			/* Flush the TLB for the current logical processor. */
+			INVVPID_DESCRIPTOR descriptor = { 0 };
+			descriptor.Vpid = 1;
+			__invvpid(InvvpidSingleContextRetainingGlobals, &descriptor);
 
-		///* MOV CR3, XXX has taken place, this indicates a new page table has been loaded.
-		// * We should iterate through all of the shadow pages and ensure RW pages are all
-		// * set instead of execute. That way if an execute happens on one, the target
-		// * will flip to the right execute entry later depending if it is a targetted process or not. */
-		//setAllShadowsToReadWrite(&lpData->eptConfig);
-		//invalidateEPT(&lpData->eptConfig);
+			/* Set the guest CR3 register, to the value of the general purpose register. */
+			ULONG64* registerList = &lpData->context.Rax;
+			ULONG64 registerValue = registerList[exitQualification.GeneralPurposeRegister] & ~(1ULL << 63);
+			__vmx_vmwrite(VMCS_GUEST_CR3, registerValue);
+		}
 	}
 
 	return TRUE;
@@ -129,17 +131,24 @@ NTSTATUS VMShadow_hidePageAsRoot(
 	BOOLEAN hypervisorRunning
 )
 {
-	NTSTATUS status = STATUS_INVALID_PARAMETER;
+	/* DEBUG: Temporarily removing all EPT hooks for testing. */
+	UNREFERENCED_PARAMETER(eptConfig);
+	UNREFERENCED_PARAMETER(targetPA);
+	UNREFERENCED_PARAMETER(payloadPage);
+	UNREFERENCED_PARAMETER(hypervisorRunning);
+	return STATUS_SUCCESS;
 
-	status = hidePage(eptConfig, NULL, targetPA, payloadPage);
+	//NTSTATUS status = STATUS_INVALID_PARAMETER;
 
-	if (NT_SUCCESS(status) && (TRUE == hypervisorRunning))
-	{
-		/* We have modified EPT layout, therefore flush and reload. */
-		invalidateEPT(eptConfig);
-	}
+	//status = hidePage(eptConfig, NULL, targetPA, payloadPage);
 
-	return status;
+	//if (NT_SUCCESS(status) && (TRUE == hypervisorRunning))
+	//{
+	//	/* We have modified EPT layout, therefore flush and reload. */
+	//	invalidateEPT(eptConfig);
+	//}
+
+	//return status;
 }
 
 NTSTATUS VMShadow_hideExecInProcess(
@@ -149,43 +158,46 @@ NTSTATUS VMShadow_hideExecInProcess(
 	PUINT8 execVA
 )
 {
-	NTSTATUS status;
+	/* DEBUG: Temporarily removing all EPT hooks for testing. */
+	UNREFERENCED_PARAMETER(eptConfig);
+	UNREFERENCED_PARAMETER(targetProcess);
+	UNREFERENCED_PARAMETER(targetVA);
+	UNREFERENCED_PARAMETER(execVA);
+	return STATUS_SUCCESS;
 
-	/* Get the physical address of the page table entry that is used for the target VA. */
-	PHYSICAL_ADDRESS physTargetPTE;
-	status = MemManage_getPTEPhysAddressFromVA(targetProcess, targetVA, &physTargetPTE);
-	if (NT_SUCCESS(status))
-	{
-		/* Add to the list of monitored page table entries. */
-		status = addMonitoredPTE(eptConfig, physTargetPTE);
-		if (NT_SUCCESS(status))
-		{
-			/* Calculate the physical address of the target VA,
-			 * I know we could calculate this by reading the PTE here and
-			 * calculating, however we have a function for this already (at the expense of reading PTE again.. */
-			PHYSICAL_ADDRESS physTargetVA;
-			status = MemManage_getPhysFromVirtual(targetProcess, targetVA, &physTargetVA);
-			if (NT_SUCCESS(status))
-			{
-				/* Hide the executable page, for that page only. */
-				status = hidePage(eptConfig, targetProcess, physTargetVA, execVA);
-				if (NT_SUCCESS(status))
-				{
-					/* As we are attempting to hide exec memory in a process,
-					 * it's safe to say the hypervisor & EPT is already running.
-					 * Therefore we should invalidate the already existing EPT to flush
-					 * in the new config. */
-					INVEPT_DESCRIPTOR eptDescriptor;
+	//NTSTATUS status;
 
-					eptDescriptor.EptPointer = eptConfig->eptPointer.Flags;
-					eptDescriptor.Reserved = 0;
-					__invept(1, &eptDescriptor);
-				}
-			}
-		}
-	}
+	///* Get the physical address of the page table entry that is used for the target VA. */
+	//PHYSICAL_ADDRESS physTargetPTE;
+	//status = MemManage_getPTEPhysAddressFromVA(targetProcess, targetVA, &physTargetPTE);
+	//if (NT_SUCCESS(status))
+	//{
+	//	/* Add to the list of monitored page table entries. */
+	//	status = addMonitoredPTE(eptConfig, physTargetPTE);
+	//	if (NT_SUCCESS(status))
+	//	{
+	//		/* Calculate the physical address of the target VA,
+	//		 * I know we could calculate this by reading the PTE here and
+	//		 * calculating, however we have a function for this already (at the expense of reading PTE again.. */
+	//		PHYSICAL_ADDRESS physTargetVA;
+	//		status = MemManage_getPhysFromVirtual(targetProcess, targetVA, &physTargetVA);
+	//		if (NT_SUCCESS(status))
+	//		{
+	//			/* Hide the executable page, for that page only. */
+	//			status = hidePage(eptConfig, targetProcess, physTargetVA, execVA);
+	//			if (NT_SUCCESS(status))
+	//			{
+	//				/* As we are attempting to hide exec memory in a process,
+	//				 * it's safe to say the hypervisor & EPT is already running.
+	//				 * Therefore we should invalidate the already existing EPT to flush
+	//				 * in the new config. */
+	//				invalidateEPT(eptConfig);
+	//			}
+	//		}
+	//	}
+	//}
 
-	return status;
+	//return status;
 }
 
 /******************** Module Code ********************/
@@ -380,5 +392,5 @@ static void invalidateEPT(PEPT_CONFIG eptConfig)
 
 	eptDescriptor.EptPointer = eptConfig->eptPointer.Flags;
 	eptDescriptor.Reserved = 0;
-	__invept(1, &eptDescriptor);
+	__invept(InveptSingleContext, &eptDescriptor);
 }

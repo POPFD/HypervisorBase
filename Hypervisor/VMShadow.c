@@ -19,7 +19,7 @@
 
 /******************** Module Prototypes ********************/
 static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physPTE);
-static NTSTATUS hidePage(PEPT_CONFIG eptConfig, PEPROCESS targetProcess, PHYSICAL_ADDRESS targetPA, PVOID executePage);
+static NTSTATUS hidePage(PEPT_CONFIG eptConfig, ULONG64 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage);
 static PEPT_SHADOW_PAGE findShadow(PEPT_CONFIG eptConfig, UINT64 guestPA);
 static void setAllShadowsToReadWrite(PEPT_CONFIG eptConfig);
 static void invalidateEPT(PEPT_CONFIG eptConfig);
@@ -52,12 +52,13 @@ BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
 				DEBUG_PRINT("Attempted execute, switching to executable page.\r\n");
 
 				/* Check to see if target process matches. */
-				PEPROCESS currentProcess = PsGetCurrentProcess();
+				ULONG64 guestCR3;
+				__vmx_vmread(VMCS_GUEST_CR3, &guestCR3);
 
-				if ((NULL == foundShadow->targetProcess) || (currentProcess == foundShadow->targetProcess))
+				if ((0 == foundShadow->targetCR3) || (guestCR3 == foundShadow->targetCR3))
 				{
-					/* Switch to the modified execute page, we will use MTF tracing to
-					 * know when to put it back to the RW only page. */
+					/* Switch to the target execute page, this is if there it is a global shadow (no target CR3)
+					 * or the CR3 matches the target. */
 					foundShadow->targetPML1E->Flags = foundShadow->executeTargetPML1E.Flags;
 				}
 				else
@@ -135,31 +136,24 @@ BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData, PCONTEXT guestContext)
 	return TRUE;
 }
 
-NTSTATUS VMShadow_hidePageAsRoot(
+NTSTATUS VMShadow_hidePageGlobally(
 	PEPT_CONFIG eptConfig,
 	PHYSICAL_ADDRESS targetPA,
 	PUINT8 payloadPage,
 	BOOLEAN hypervisorRunning
 )
 {
-	/* DEBUG: Temporarily removing all EPT hooks for testing. */
-	UNREFERENCED_PARAMETER(eptConfig);
-	UNREFERENCED_PARAMETER(targetPA);
-	UNREFERENCED_PARAMETER(payloadPage);
-	UNREFERENCED_PARAMETER(hypervisorRunning);
-	return STATUS_SUCCESS;
+	NTSTATUS status = STATUS_INVALID_PARAMETER;
 
-	//NTSTATUS status = STATUS_INVALID_PARAMETER;
+	status = hidePage(eptConfig, 0, targetPA, payloadPage);
 
-	//status = hidePage(eptConfig, NULL, targetPA, payloadPage);
+	if (NT_SUCCESS(status) && (TRUE == hypervisorRunning))
+	{
+		/* We have modified EPT layout, therefore flush and reload. */
+		invalidateEPT(eptConfig);
+	}
 
-	//if (NT_SUCCESS(status) && (TRUE == hypervisorRunning))
-	//{
-	//	/* We have modified EPT layout, therefore flush and reload. */
-	//	invalidateEPT(eptConfig);
-	//}
-
-	//return status;
+	return status;
 }
 
 NTSTATUS VMShadow_hideExecInProcess(
@@ -169,46 +163,49 @@ NTSTATUS VMShadow_hideExecInProcess(
 	PUINT8 execVA
 )
 {
-	/* DEBUG: Temporarily removing all EPT hooks for testing. */
-	UNREFERENCED_PARAMETER(eptConfig);
-	UNREFERENCED_PARAMETER(targetProcess);
-	UNREFERENCED_PARAMETER(targetVA);
-	UNREFERENCED_PARAMETER(execVA);
-	return STATUS_SUCCESS;
+	NTSTATUS status;
 
-	//NTSTATUS status;
+	/* Get the process/page table we want to shadow the memory from. */
+	ULONG64 tableBase = MemManage_getPageTableBase(targetProcess);
+	if (0 != tableBase)
+	{
+		/* Get the physical address of the page table entry that is used for the target VA. */
+		PHYSICAL_ADDRESS physTargetPTE;
+		status = MemManage_getPTEPhysAddressFromVA(targetProcess, targetVA, &physTargetPTE);
+		if (NT_SUCCESS(status))
+		{
+			/* Add to the list of monitored page table entries. */
+			status = addMonitoredPTE(eptConfig, physTargetPTE);
+			if (NT_SUCCESS(status))
+			{
+				/* Calculate the physical address of the target VA,
+				 * I know we could calculate this by reading the PTE here and
+				 * calculating, however we have a function for this already (at the expense of reading PTE again.. */
+				PHYSICAL_ADDRESS physTargetVA;
+				status = MemManage_getPhysFromVirtual(targetProcess, targetVA, &physTargetVA);
+				if (NT_SUCCESS(status))
+				{
+					/* Hide the executable page, for that page only. */
+					status = hidePage(eptConfig, tableBase, physTargetVA, execVA);
+					if (NT_SUCCESS(status))
+					{
+						/* As we are attempting to hide exec memory in a process,
+						 * it's safe to say the hypervisor & EPT is already running.
+						 * Therefore we should invalidate the already existing EPT to flush
+						 * in the new config. */
+						invalidateEPT(eptConfig);
+					}
+				}
+			}
+		}
+	}
+	else
+	{
+		/* Unable to get the table base. */
+		status = STATUS_INVALID_MEMBER;
+	}
 
-	///* Get the physical address of the page table entry that is used for the target VA. */
-	//PHYSICAL_ADDRESS physTargetPTE;
-	//status = MemManage_getPTEPhysAddressFromVA(targetProcess, targetVA, &physTargetPTE);
-	//if (NT_SUCCESS(status))
-	//{
-	//	/* Add to the list of monitored page table entries. */
-	//	status = addMonitoredPTE(eptConfig, physTargetPTE);
-	//	if (NT_SUCCESS(status))
-	//	{
-	//		/* Calculate the physical address of the target VA,
-	//		 * I know we could calculate this by reading the PTE here and
-	//		 * calculating, however we have a function for this already (at the expense of reading PTE again.. */
-	//		PHYSICAL_ADDRESS physTargetVA;
-	//		status = MemManage_getPhysFromVirtual(targetProcess, targetVA, &physTargetVA);
-	//		if (NT_SUCCESS(status))
-	//		{
-	//			/* Hide the executable page, for that page only. */
-	//			status = hidePage(eptConfig, targetProcess, physTargetVA, execVA);
-	//			if (NT_SUCCESS(status))
-	//			{
-	//				/* As we are attempting to hide exec memory in a process,
-	//				 * it's safe to say the hypervisor & EPT is already running.
-	//				 * Therefore we should invalidate the already existing EPT to flush
-	//				 * in the new config. */
-	//				invalidateEPT(eptConfig);
-	//			}
-	//		}
-	//	}
-	//}
-
-	//return status;
+	return status;
 }
 
 /******************** Module Code ********************/
@@ -269,7 +266,7 @@ static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physPTE)
 	return status;
 }
 
-static NTSTATUS hidePage(PEPT_CONFIG eptConfig, PEPROCESS targetProcess, PHYSICAL_ADDRESS targetPA, PVOID executePage)
+static NTSTATUS hidePage(PEPT_CONFIG eptConfig, ULONG64 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage)
 {
 	NTSTATUS status;
 
@@ -294,7 +291,7 @@ static NTSTATUS hidePage(PEPT_CONFIG eptConfig, PEPROCESS targetProcess, PHYSICA
 				shadowConfig->pageOffset = ADDRMASK_EPT_PML1_OFFSET(targetPA.QuadPart);
 
 				/* Store the target process. */
-				shadowConfig->targetProcess = targetProcess;
+				shadowConfig->targetCR3 = targetCR3;
 
 				/* Store a pointer to the PML1E we will be modifying. */
 				shadowConfig->targetPML1E = EPT_getPML1EFromAddress(eptConfig, targetPA);

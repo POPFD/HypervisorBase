@@ -18,8 +18,6 @@
 
 
 /******************** Module Prototypes ********************/
-
-static UINT64 getTableBase(PEPROCESS process);
 static NTSTATUS readPhysicalAddress(PHYSICAL_ADDRESS sourceAddress, SIZE_T size, void* targetAddress);
 static NTSTATUS writePhysicalAddress(PHYSICAL_ADDRESS targetAddress, SIZE_T size, void* sourceAddress);
 
@@ -118,7 +116,7 @@ NTSTATUS MemManage_getPTEPhysAddressFromVA(PEPROCESS targetProcess, PVOID virtua
 	NTSTATUS status;
 
 	/* Get the base address of the paging table/PML4. */
-	UINT64 tableBase = getTableBase(targetProcess);
+	UINT64 tableBase = MemManage_getPageTableBase(targetProcess);
 
 	/* Gather the indexes for the page tables from the VA. */
 	UINT64 indexPML4 = ADDRMASK_PML4_INDEX(virtualAddress);
@@ -180,9 +178,7 @@ NTSTATUS MemManage_getPTEPhysAddressFromVA(PEPROCESS targetProcess, PVOID virtua
 	return status;
 }
 
-/******************** Module Code ********************/
-
-static UINT64 getTableBase(PEPROCESS process)
+UINT64 MemManage_getPageTableBase(PEPROCESS process)
 {
 	/* As KVA shadowing is used for CR3 as a mitigation for spectre/meltdown
 	* we cannot use the CR3 as it is a shadowed table instead. Directly
@@ -210,6 +206,8 @@ static UINT64 getTableBase(PEPROCESS process)
 
 	return tableBase;
 }
+
+/******************** Module Code ********************/
 
 static NTSTATUS readPhysicalAddress(PHYSICAL_ADDRESS sourceAddress, SIZE_T size, void* targetAddress)
 {

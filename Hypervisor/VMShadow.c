@@ -40,7 +40,7 @@ BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
 	{
 		SIZE_T guestPA;
 		__vmx_vmread(VMCS_GUEST_PHYSICAL_ADDRESS, &guestPA);
-		DEBUG_PRINT("Shadow page: 0x%I64X\t", guestPA);
+		//DEBUG_PRINT("Shadow page: 0x%I64X\t", guestPA);
 
 		/* Find the shadow page that caused the violation. */
 		PEPT_SHADOW_PAGE foundShadow = findShadow(eptConfig, guestPA);
@@ -49,7 +49,7 @@ BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
 			/* Check to see if the violation was from trying to execute a non-executable page. */
 			if ((FALSE == violationQualification.EptExecutable) && (TRUE == violationQualification.ExecuteAccess))
 			{
-				DEBUG_PRINT("Attempted execute, switching to executable page.\r\n");
+				//DEBUG_PRINT("Attempted execute, switching to executable page.\r\n");
 
 				/* Check to see if target process matches. */
 				ULONG64 guestCR3;
@@ -73,7 +73,7 @@ BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
 			else if ((TRUE == violationQualification.EptExecutable) &&
 				(violationQualification.ReadAccess || violationQualification.WriteAccess))
 			{
-				DEBUG_PRINT("Attempted read or write, switched to read/write page.\r\n");
+				//DEBUG_PRINT("Attempted read or write, switched to read/write page.\r\n");
 
 				/* If so, we update the PML1E so that the read/write page is visible to the guest. */
 				foundShadow->targetPML1E->Flags = foundShadow->readWritePML1E.Flags;

@@ -18,8 +18,6 @@
 
 
 /******************** Module Prototypes ********************/
-static NTSTATUS readPhysicalAddress(PHYSICAL_ADDRESS sourceAddress, SIZE_T size, void* targetAddress);
-static NTSTATUS writePhysicalAddress(PHYSICAL_ADDRESS targetAddress, SIZE_T size, void* sourceAddress);
 
 /******************** Public Code ********************/
 
@@ -40,7 +38,7 @@ NTSTATUS MemManage_changeMemoryProt(PEPROCESS process, PUINT8 baseAddress, SIZE_
 			/* Read the original page table entry. */
 			PTE readPTE;
 
-			status = readPhysicalAddress(physPTE, sizeof(readPTE), &readPTE);
+			status = MemManage_readPhysicalAddress(physPTE, sizeof(readPTE), &readPTE);
 			if (NT_SUCCESS(status))
 			{
 				/* Modify the page table entry with new flags. */
@@ -48,7 +46,7 @@ NTSTATUS MemManage_changeMemoryProt(PEPROCESS process, PUINT8 baseAddress, SIZE_
 				readPTE.ExecuteDisable = (FALSE == executable);
 
 				/* Write the page table entry. */
-				status = writePhysicalAddress(physPTE, sizeof(readPTE), &readPTE);
+				status = MemManage_writePhysicalAddress(physPTE, sizeof(readPTE), &readPTE);
 				if (NT_ERROR(status))
 				{
 					/* Error detected so break from the loop. */
@@ -70,7 +68,7 @@ NTSTATUS MemManage_readVirtualAddress(PEPROCESS targetProcess, void* sourceVA, S
 	status = MemManage_getPhysFromVirtual(targetProcess, sourceVA, &targetSource);
 	if (NT_SUCCESS(status))
 	{
-		status = readPhysicalAddress(targetSource, size, targetVA);
+		status = MemManage_readPhysicalAddress(targetSource, size, targetVA);
 	}
 
 	return status;
@@ -85,7 +83,7 @@ NTSTATUS MemManage_writeVirtualAddress(PEPROCESS targetProcess, void* targetVA, 
 	status = MemManage_getPhysFromVirtual(targetProcess, targetVA, &targetPhysical);
 	if (NT_SUCCESS(status))
 	{
-		status = writePhysicalAddress(targetPhysical, size, sourceVA);
+		status = MemManage_writePhysicalAddress(targetPhysical, size, sourceVA);
 	}
 
 	return status;
@@ -100,7 +98,7 @@ NTSTATUS MemManage_getPhysFromVirtual(PEPROCESS targetProcess, PVOID virtualAddr
 	{
 		/* Read the PTE. */
 		PTE readPTE;
-		status = readPhysicalAddress(physPTE, sizeof(readPTE), &readPTE);
+		status = MemManage_readPhysicalAddress(physPTE, sizeof(readPTE), &readPTE);
 		if (NT_SUCCESS(status))
 		{
 			/* Convert from page number to physical address. */
@@ -129,7 +127,7 @@ NTSTATUS MemManage_getPTEPhysAddressFromVA(PEPROCESS targetProcess, PVOID virtua
 	physPML4.QuadPart = (LONGLONG)&((PPML4E)tableBase)[indexPML4];
 	PML4E readPML4;
 
-	status = readPhysicalAddress(physPML4, sizeof(readPML4), &readPML4);
+	status = MemManage_readPhysicalAddress(physPML4, sizeof(readPML4), &readPML4);
 	if (NT_SUCCESS(status))
 	{
 		if (TRUE == readPML4.Present)
@@ -139,7 +137,7 @@ NTSTATUS MemManage_getPTEPhysAddressFromVA(PEPROCESS targetProcess, PVOID virtua
 			physPML3.QuadPart = (LONGLONG)&((PPDPTE)(readPML4.PageFrameNumber * PAGE_SIZE))[indexPML3];
 			PDPTE readPML3;
 
-			status = readPhysicalAddress(physPML3, sizeof(readPML3), &readPML3);
+			status = MemManage_readPhysicalAddress(physPML3, sizeof(readPML3), &readPML3);
 			if (NT_SUCCESS(status))
 			{
 				if (TRUE == readPML3.Present)
@@ -149,7 +147,7 @@ NTSTATUS MemManage_getPTEPhysAddressFromVA(PEPROCESS targetProcess, PVOID virtua
 					physPML2.QuadPart = (LONGLONG)&((PPDE)(readPML3.PageFrameNumber * PAGE_SIZE))[indexPML2];
 					PDE readPML2;
 
-					status = readPhysicalAddress(physPML2, sizeof(readPML2), &readPML2);
+					status = MemManage_readPhysicalAddress(physPML2, sizeof(readPML2), &readPML2);
 					if (NT_SUCCESS(status))
 					{
 						if (TRUE == readPML2.Present)
@@ -207,9 +205,7 @@ UINT64 MemManage_getPageTableBase(PEPROCESS process)
 	return tableBase;
 }
 
-/******************** Module Code ********************/
-
-static NTSTATUS readPhysicalAddress(PHYSICAL_ADDRESS sourceAddress, SIZE_T size, void* targetAddress)
+NTSTATUS MemManage_readPhysicalAddress(PHYSICAL_ADDRESS sourceAddress, SIZE_T size, void* targetAddress)
 {
 	MM_COPY_ADDRESS copyAddress;
 	copyAddress.PhysicalAddress = sourceAddress;
@@ -218,7 +214,7 @@ static NTSTATUS readPhysicalAddress(PHYSICAL_ADDRESS sourceAddress, SIZE_T size,
 	return MmCopyMemory(targetAddress, copyAddress, size, MM_COPY_MEMORY_PHYSICAL, &bytesTransferred);
 }
 
-static NTSTATUS writePhysicalAddress(PHYSICAL_ADDRESS targetAddress, SIZE_T size, void* sourceAddress)
+NTSTATUS MemManage_writePhysicalAddress(PHYSICAL_ADDRESS targetAddress, SIZE_T size, void* sourceAddress)
 {
 	NTSTATUS status;
 
@@ -241,3 +237,5 @@ static NTSTATUS writePhysicalAddress(PHYSICAL_ADDRESS targetAddress, SIZE_T size
 
 	return status;
 }
+
+/******************** Module Code ********************/

@@ -84,7 +84,7 @@ static NTSTATUS isHVSupported(void)
 {
 	NTSTATUS status;
 
-	DEBUG_PRINT("Checking to see if a hypervisor is supported.");
+	DEBUG_PRINT("Checking to see if a hypervisor is supported.\r\n");
 
 	/* Check to see if VMX extensions are supported on the processor. */
 	CPUID_EAX_01 versionInfo;

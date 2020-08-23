@@ -46,9 +46,16 @@ typedef struct _EPT_MONITORED_PTE
 	/* Offset into the aligned page that the PTE exists. */
 	SIZE_T pageOffset;
 
+	/* Aligned physical address of the target shadow memory. */
+	PHYSICAL_ADDRESS physAlignTarget;
+
 	/* Pointer to the PML1 entry that will be used modified for detection
 	* of a page table entry write. */
 	PEPT_PML1_ENTRY targetPML1E;
+
+	/* Stored the value of the last Page Frame Number of the PTE,
+	 * this is used so we can compare to check if paging has taken place. */
+	SIZE_T lastGuestPFN;
 
 	/* List entry for the monitored PTE, so we can keep a list of all
 	* monitored page table entries. */
@@ -74,6 +81,7 @@ typedef struct _EPT_SHADOW_PAGE
 
 	/* Will store the flags of the specific PML1E's that will be
 	 * used for targetting shadowing. */
+	EPT_PML1_ENTRY originalPML1E;
 	EPT_PML1_ENTRY executeTargetPML1E;
 	EPT_PML1_ENTRY executeNotTargetPML1E;
 	EPT_PML1_ENTRY readWritePML1E;

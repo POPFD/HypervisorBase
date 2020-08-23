@@ -14,3 +14,5 @@ NTSTATUS MemManage_writeVirtualAddress(PEPROCESS targetProcess, void* targetVA, 
 NTSTATUS MemManage_getPhysFromVirtual(PEPROCESS targetProcess, PVOID virtualAddress, PHYSICAL_ADDRESS* physicalAddress);
 NTSTATUS MemManage_getPTEPhysAddressFromVA(PEPROCESS targetProcess, PVOID virtualAddress, PHYSICAL_ADDRESS* physPTE);
 UINT64 MemManage_getPageTableBase(PEPROCESS process);
+NTSTATUS MemManage_readPhysicalAddress(PHYSICAL_ADDRESS sourceAddress, SIZE_T size, void* targetAddress);
+NTSTATUS MemManage_writePhysicalAddress(PHYSICAL_ADDRESS targetAddress, SIZE_T size, void* sourceAddress);

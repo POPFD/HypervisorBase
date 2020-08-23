@@ -91,7 +91,7 @@ BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
 	return result;
 }
 
-BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData)
+BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData, PCONTEXT guestContext)
 {
 	/* Cast the exit qualification to its proper type. */
 	VMX_EXIT_QUALIFICATION_MOV_CR exitQualification;
@@ -102,15 +102,15 @@ BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData)
 	{
 		if (VMX_EXIT_QUALIFICATION_ACCESS_MOV_TO_CR == exitQualification.AccessType)
 		{
-			///* MOV CR3, XXX has taken place, this indicates a new page table has been loaded.
-			// * We should iterate through all of the shadow pages and ensure RW pages are all
-			// * set instead of execute. That way if an execute happens on one, the target
-			// * will flip to the right execute entry later depending if it is a targetted process or not. */
-			//setAllShadowsToReadWrite(&lpData->eptConfig);
-			//invalidateEPT(&lpData->eptConfig);
+			/* MOV CR3, XXX has taken place, this indicates a new page table has been loaded.
+			 * We should iterate through all of the shadow pages and ensure RW pages are all
+			 * set instead of execute. That way if an execute happens on one, the target
+			 * will flip to the right execute entry later depending if it is a targetted process or not. */
+			setAllShadowsToReadWrite(&lpData->eptConfig);
+			invalidateEPT(&lpData->eptConfig);
 
 			/* Set the guest CR3 register, to the value of the general purpose register. */
-			ULONG64* registerList = &lpData->context.Rax;
+			ULONG64* registerList = &guestContext->Rax;
 
 			ULONG64 registerValue;
 			if (VMX_EXIT_QUALIFICATION_GENREG_RSP == exitQualification.GeneralPurposeRegister)

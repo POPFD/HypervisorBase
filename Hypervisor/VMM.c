@@ -50,8 +50,8 @@ NTSTATUS VMM_init(PVMM_DATA lpData)
 	* This is needed as once the VM is launched it will begin execution at
 	* the defined instruction. This will be the on launch function, within here
 	* we need to restore everything back to what it originally was (as we are hijacking and containerising the host). */
-	DEBUG_PRINT("Capturing context.\r\n");
-	RtlCaptureContext(&lpData->context);
+	DEBUG_PRINT("Capturing host context.\r\n");
+	RtlCaptureContext(&lpData->hostContext);
 
 	/* This is where the hypervisor will re-enter once launched,
 	* We will use the AC flag within EFLAGS to indicate whether we are hypervised.
@@ -194,7 +194,7 @@ static NTSTATUS enterRootMode(PVMM_DATA lpData)
 static void setupVMCS(PVMM_DATA lpData)
 {
 	PCONTROL_REGISTERS controlRegisters = &lpData->controlRegisters;
-	PCONTEXT context = &lpData->context;
+	PCONTEXT context = &lpData->hostContext;
 
 	DEBUG_PRINT("Initialising the VMCS for the logical processor.\r\n");
 

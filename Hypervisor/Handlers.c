@@ -44,9 +44,9 @@ DECLSPEC_NORETURN VOID Handlers_hostToGuest(void)
 	* we do this by setting the align check bit in EFLAGS.
 	*
 	* This is checked within initialiseVirtualProcessor to continue execution when a guest. */
-	lpData->context.EFlags |= EFLAGS_ALIGNMENT_CHECK_FLAG_FLAG;
+	lpData->hostContext.EFlags |= EFLAGS_ALIGNMENT_CHECK_FLAG_FLAG;
 
-	_RestoreContext(&lpData->context, NULL);
+	_RestoreContext(&lpData->hostContext, NULL);
 }
 
 
@@ -161,7 +161,7 @@ static void handleExitReason(PVMM_DATA lpData, PCONTEXT guestContext)
 		{
 			/* If we have handled the MOV to/from CR correctly,
 			 * we go to the next instruction. */
-			moveToNextInstruction = VMShadow_handleMovCR(lpData);
+			moveToNextInstruction = VMShadow_handleMovCR(lpData, guestContext);
 			break;
 		}
 

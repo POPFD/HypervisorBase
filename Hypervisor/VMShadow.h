@@ -13,7 +13,7 @@
 
 /******************** Public Prototypes ********************/
 BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig);
-BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData);
+BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData, PCONTEXT guestContext);
 
 NTSTATUS VMShadow_hideExecInProcess(
 	PEPT_CONFIG eptConfig,

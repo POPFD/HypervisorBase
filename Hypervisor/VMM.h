@@ -41,7 +41,7 @@ typedef struct _VMM_DATA
 	ULONG processorIndex;
 	UINT64 hostPML4Base;
 	CONTROL_REGISTERS controlRegisters;
-	CONTEXT context;
+	CONTEXT hostContext;
 	LARGE_INTEGER msrData[17];
 	MTRR_RANGE mtrrTable[IA32_MTRR_VARIABLE_COUNT];
 	UINT32 eptControls;

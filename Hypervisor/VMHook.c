@@ -102,7 +102,7 @@ static NTSTATUS hookAFunction(PEPT_CONFIG eptConfig, PVOID targetFunction, PVOID
 		if (NT_SUCCESS(status))
 		{
 			PHYSICAL_ADDRESS targetPA = MmGetPhysicalAddress(alignedTarget);
-			status = VMShadow_hidePageAsRoot(eptConfig, targetPA, hookPage, FALSE);
+			status = VMShadow_hidePageGlobally(eptConfig, targetPA, hookPage, FALSE);
 		}
 
 		/* Free the memory as no longer needed as VMShadow copies the hooked page. */

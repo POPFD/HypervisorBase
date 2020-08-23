@@ -119,8 +119,9 @@ BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData, PCONTEXT guestContext)
 			}
 			else
 			{
-				registerValue = registerList[exitQualification.GeneralPurposeRegister] & ~(1ULL << 63);
+				registerValue = registerList[exitQualification.GeneralPurposeRegister];
 			}
+			registerValue &= ~(1ULL << 63);
 
 			__vmx_vmwrite(VMCS_GUEST_CR3, registerValue);
 

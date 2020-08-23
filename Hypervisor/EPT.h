@@ -36,32 +36,6 @@ typedef EPDE_2MB EPT_PML2_ENTRY, *PEPT_PML2_ENTRY;
 typedef EPDE EPT_PML2_POINTER, *PEPT_PML2_POINTER;
 typedef EPTE EPT_PML1_ENTRY, *PEPT_PML1_ENTRY;
 
-/* Structure that will hold configuration of all monitored page table entries,
-* this is to account for paging changes on the EPT shadow hooked pages. */
-typedef struct _EPT_MONITORED_PTE
-{
-	/* Aligned physical address of the PTE. */
-	PHYSICAL_ADDRESS physAlignPTE;
-
-	/* Offset into the aligned page that the PTE exists. */
-	SIZE_T pageOffset;
-
-	/* Aligned physical address of the target shadow memory. */
-	PHYSICAL_ADDRESS physAlignTarget;
-
-	/* Pointer to the PML1 entry that will be used modified for detection
-	* of a page table entry write. */
-	PEPT_PML1_ENTRY targetPML1E;
-
-	/* Stored the value of the last Page Frame Number of the PTE,
-	 * this is used so we can compare to check if paging has taken place. */
-	SIZE_T lastGuestPFN;
-
-	/* List entry for the monitored PTE, so we can keep a list of all
-	* monitored page table entries. */
-	LIST_ENTRY listEntry;
-} EPT_MONITORED_PTE, *PEPT_MONITORED_PTE;
-
 /* Structure that will hold the shadow configuration for hiding executable pages. */
 typedef struct _EPT_SHADOW_PAGE
 {
@@ -90,6 +64,32 @@ typedef struct _EPT_SHADOW_PAGE
 	* all shadow pages. */
 	LIST_ENTRY listEntry;
 } EPT_SHADOW_PAGE, *PEPT_SHADOW_PAGE;
+
+/* Structure that will hold configuration of all monitored page table entries,
+* this is to account for paging changes on the EPT shadow hooked pages. */
+typedef struct _EPT_MONITORED_PTE
+{
+	/* Aligned physical address of the PTE. */
+	PHYSICAL_ADDRESS physAlignPTE;
+
+	/* Offset into the aligned page that the PTE exists. */
+	SIZE_T pageOffset;
+
+	/* Pointer to the shadow page hook to be modified. */
+	PEPT_SHADOW_PAGE shadowPage;
+
+	/* Pointer to the PML1 entry that will be used modified for detection
+	* of a page table entry write. */
+	PEPT_PML1_ENTRY targetPML1E;
+
+	/* Stored the value of the last Page Frame Number of the PTE,
+	* this is used so we can compare to check if paging has taken place. */
+	SIZE_T lastGuestPFN;
+
+	/* List entry for the monitored PTE, so we can keep a list of all
+	* monitored page table entries. */
+	LIST_ENTRY listEntry;
+} EPT_MONITORED_PTE, *PEPT_MONITORED_PTE;
 
 /* Structure that will hold the PML1 data for a dynamically split PML2 entry. */
 typedef struct _EPT_DYNAMIC_SPLIT

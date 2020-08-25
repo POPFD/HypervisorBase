@@ -17,6 +17,11 @@ typedef enum
 	PT_LEVEL_PML4E = 4
 } PT_LEVEL;
 
+typedef enum
+{
+	OperationRead,
+	OperationWrite
+} OPERATION_TYPE;
 
 /******************** Module Constants ********************/
 #define OFFSET_DIRECTORY_TABLE_BASE 0x028
@@ -50,6 +55,15 @@ typedef enum
 
 
 /******************** Module Prototypes ********************/
+static NTSTATUS readOrWritePhysicalAddress(
+	PMM_CONTEXT context,
+	OPERATION_TYPE type,
+	PHYSICAL_ADDRESS physicalAddress,
+	VOID* buffer,
+	SIZE_T bytesToCopy
+);
+static VOID* mapPhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS physicalAddress);
+static void unmapPhysicalAddress(PMM_CONTEXT context);
 static NTSTATUS split2MbPage(PDE_2MB_64* pdeLarge);
 static PT_ENTRY_64* getPTEFromVA(CR3 tableBase, PVOID virtualAddress, PT_LEVEL* level);
 static UINT64 physicalFromVirtual(VOID* virtualAddress);
@@ -63,7 +77,7 @@ NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3)
 
 	/* Reserve a single page, this will be used for mapping in the guest 
 	 * page data into. */
-	context->reservedPage = MmAllocateMappingAddress(PAGE_SIZE, 0);
+	PVOID reservedPage = MmAllocateMappingAddress(PAGE_SIZE, 0);
 	if (NULL != context->reservedPage)
 	{
 		/* Attempt to get the page table entry of the reserved page,
@@ -82,7 +96,12 @@ NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3)
 		/* Ensure we are still in success state, splitting could have failed. */
 		if (NT_SUCCESS(status))
 		{
+			/* Drop the translation of the virtual address,
+			 * If at any point we observe it at 0, we know nothing is "mapped". */
+			reservedPagePTE->Flags = 0;
 
+			context->reservedPage = reservedPage;
+			context->reservedPagePte = (PTE_64*)reservedPagePTE;
 		}
 	}
 	else
@@ -90,10 +109,17 @@ NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3)
 		status = STATUS_INSUFFICIENT_RESOURCES;
 	}
 
+	/* If an error took place during initialisation, free
+	 * all allocated memory to prevent leaks. */
+	if (NT_ERROR(status))
+	{
+		MmFreeMappingAddress(reservedPage, 0);
+	}
+
 	return status;
 }
 
-UINT64 MemManage_getPageTableBase(PEPROCESS process)
+CR3 MemManage_getPageTableBase(PEPROCESS process)
 {
 	/* As KVA shadowing is used for CR3 as a mitigation for spectre/meltdown
 	* we cannot use the CR3 as it is a shadowed table instead. Directly
@@ -109,14 +135,14 @@ UINT64 MemManage_getPageTableBase(PEPROCESS process)
 
 	/* If running as admin, UserDirectoryTableBase will be set as 1 and KVA shadowing will not be present,
 	* therefor we should use the directory table base (kernel). Again due to KVA shadowing... */
-	UINT64 tableBase;
+	CR3 tableBase;
 
-	tableBase = *((UINT64*)((UINT64)process + OFFSET_USER_DIR_TABLE));
-	tableBase &= ~0xFFF;
-	if (0 == tableBase)
+	tableBase = *((CR3*)((UINT64)process + OFFSET_USER_DIR_TABLE));
+	tableBase.Flags &= ~0xFFF;
+	if (0 == tableBase.Flags)
 	{
-		tableBase = *((UINT64*)((UINT64)process + OFFSET_DIRECTORY_TABLE_BASE));
-		tableBase &= ~0xFFF;
+		tableBase = *((CR3*)((UINT64)process + OFFSET_DIRECTORY_TABLE_BASE));
+		tableBase.Flags &= ~0xFFF;
 	}
 
 	return tableBase;
@@ -124,6 +150,63 @@ UINT64 MemManage_getPageTableBase(PEPROCESS process)
 
 
 /******************** Module Code ********************/
+
+static NTSTATUS readOrWritePhysicalAddress(
+	PMM_CONTEXT context,
+	OPERATION_TYPE type,
+	PHYSICAL_ADDRESS physicalAddress,
+	VOID* buffer,
+	SIZE_T bytesToCopy
+)
+{
+	NTSTATUS status;
+
+	/* Map the physical memory. */
+	VOID* mappedVA = mapPhysicalAddress(context, physicalAddress);
+	if (NULL != mappedVA)
+	{
+		/* Do either the read or write. */
+		if (OperationRead == type)
+		{
+			RtlCopyMemory(buffer, mappedVA, bytesToCopy);
+		}
+		else
+		{
+			/* OperationWrite */
+			RtlCopyMemory(mappedVA, buffer, bytesToCopy);
+		}
+
+		/* Unmap the physical memory. */
+		unmapPhysicalAddress(context);
+	}
+	else
+	{
+		status = STATUS_NO_MEMORY;
+	}
+
+	return status;
+}
+
+
+static VOID* mapPhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS physicalAddress)
+{
+	/* Map the requested physical address to our reserved page. */
+	context->reservedPagePte->Present = TRUE;
+	context->reservedPagePte->Write = TRUE;
+	context->reservedPagePte->PageFrameNumber = physicalAddress.QuadPart / PAGE_SIZE;
+
+	/* Invalidate the TLB entries so we don't get cached old data. */
+	__invlpg(context->reservedPage);
+
+	return (VOID*)(((PUINT8)context->reservedPage) + ADDRMASK_PML1_OFFSET(physicalAddress.QuadPart));
+}
+
+static void unmapPhysicalAddress(PMM_CONTEXT context)
+{
+	/* Clear the page entry and flush the cache (TLB). */
+	context->reservedPagePte->Flags = 0;
+	__invlpg(context->reservedPage);
+}
 
 static NTSTATUS split2MbPage(PDE_2MB_64* pdeLarge)
 {

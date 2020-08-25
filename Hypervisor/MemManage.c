@@ -119,6 +119,106 @@ NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3)
 	return status;
 }
 
+NTSTATUS MemManage_getPAForGuest(PMM_CONTEXT context, CR3 tableBase, PVOID guestVA, PHYSICAL_ADDRESS* physAddr)
+{
+	NTSTATUS status;
+
+	/* Gather the indexes for the page tables from the VA. */
+	UINT64 indexPML4 = ADDRMASK_PML4_INDEX(guestVA);
+	UINT64 indexPML3 = ADDRMASK_PML3_INDEX(guestVA);
+	UINT64 indexPML2 = ADDRMASK_PML2_INDEX(guestVA);
+	UINT64 indexPML1 = ADDRMASK_PML1_INDEX(guestVA);
+
+	/* Read the PML4. */
+	PHYSICAL_ADDRESS physPML4E;
+	PML4E_64* basePML4 = (PML4E_64*)(tableBase.AddressOfPageDirectory * PAGE_SIZE);
+	physPML4E.QuadPart = (LONGLONG)&basePML4[indexPML4];
+
+	PML4E_64 readPML4E;
+	status = readOrWritePhysicalAddress(context, OperationRead, physPML4E, &readPML4E, sizeof(readPML4E));
+	if (NT_SUCCESS(status))
+	{
+		if (TRUE == readPML4E.Present)
+		{
+			/* Read the PML3. */
+			PHYSICAL_ADDRESS physPDPTE;
+			PDPTE_64* basePDPT = (PDPTE_64*)(readPML4E.PageFrameNumber * PAGE_SIZE);
+			physPDPTE.QuadPart = (LONGLONG)&basePDPT[indexPML3];
+
+			PDPTE_64 readPDPTE;
+			status = readOrWritePhysicalAddress(context, OperationRead, physPDPTE, &readPDPTE, sizeof(readPDPTE));
+			if (NT_SUCCESS(status))
+			{
+				if (TRUE == readPDPTE.Present)
+				{
+					if (FALSE == readPDPTE.LargePage)
+					{
+						/* Read the PML2. */
+						PHYSICAL_ADDRESS physPDE;
+						PDE_64* basePD = (PDE_64*)(readPDPTE.PageFrameNumber * PAGE_SIZE);
+						physPDE.QuadPart = (LONGLONG)&basePD[indexPML2];
+
+						PDE_64 readPDE;
+						status = readOrWritePhysicalAddress(context, OperationRead, physPDE, &readPDE, sizeof(readPDE));
+						if (NT_SUCCESS(status))
+						{
+							if (TRUE == readPDE.Present)
+							{
+								if (FALSE == readPDE.LargePage)
+								{
+									/* Read the PML1. */
+									PHYSICAL_ADDRESS physPTE;
+									PTE_64* basePT = (PTE_64*)(readPDE.PageFrameNumber * PAGE_SIZE);
+									physPTE.QuadPart = (LONGLONG)&basePT[indexPML1];
+
+									PTE_64 readPTE;
+									status = readOrWritePhysicalAddress(context, OperationRead, physPTE, &readPTE, sizeof(readPTE));
+									if (NT_SUCCESS(status))
+									{
+										if (TRUE == readPTE.Present)
+										{
+											physAddr->QuadPart = (readPTE.PageFrameNumber * PAGE_SIZE) +
+																 ADDRMASK_PML1_OFFSET(guestVA);
+										}
+										else
+										{
+											status = STATUS_NO_MEMORY;
+										}
+									}
+								}
+								else
+								{
+									/* TODO: Deal with 2MB large pages here. */
+									DbgBreakPoint();
+								}
+							}
+							else
+							{
+								status = STATUS_NO_MEMORY;
+							}
+						}
+					}
+					else
+					{
+						/* TODO: Deal with 1GB large pages here. */
+						DbgBreakPoint();
+					}
+				}
+				else
+				{
+					status = STATUS_NO_MEMORY;
+				}
+			}
+		}
+		else
+		{
+			status = STATUS_NO_MEMORY;
+		}
+	}
+
+	return status;
+}
+
 CR3 MemManage_getPageTableBase(PEPROCESS process)
 {
 	/* As KVA shadowing is used for CR3 as a mitigation for spectre/meltdown
@@ -178,6 +278,7 @@ static NTSTATUS readOrWritePhysicalAddress(
 
 		/* Unmap the physical memory. */
 		unmapPhysicalAddress(context);
+		status = STATUS_SUCCESS;
 	}
 	else
 	{

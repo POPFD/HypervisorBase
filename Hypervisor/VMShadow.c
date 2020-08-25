@@ -202,6 +202,11 @@ static void handlePotentialPTEWrite(PEPT_CONFIG eptConfig)
 	 * if any of the PFN's in the PTE have been modified, if so we update
 	 * the guest -> host mapping. */
 
+	if (FALSE == KD_DEBUGGER_NOT_PRESENT)
+	{
+		DbgBreakPoint();
+	}
+
 	BOOLEAN updatedPTE = FALSE;
 
 	 /* Keep going through the whole linked list, until the flink points back to the root. */
@@ -521,11 +526,8 @@ static PEPT_MONITORED_PTE findMonitoredPTE(PEPT_CONFIG eptConfig, UINT64 guestPA
 		* the violation was caused by this hook. Therefor we switch pages appropriately. */
 		if (monitoredPTE->physAlignPTE.QuadPart == (LONGLONG)PAGE_ALIGN(guestPA))
 		{
-			if (monitoredPTE->pageOffset == ADDRMASK_EPT_PML1_OFFSET(guestPA))
-			{
-				result = monitoredPTE;
-				break;
-			}
+			result = monitoredPTE;
+			break;
 		}
 	}
 

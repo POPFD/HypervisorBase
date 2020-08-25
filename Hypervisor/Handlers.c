@@ -149,10 +149,6 @@ static void handleExitReason(PVMM_DATA lpData, PCONTEXT guestContext)
 				* We want to try process the instruction again, now that the page has been switched. */
 				moveToNextInstruction = FALSE;
 			}
-			else
-			{
-				DEBUG_PRINT("Unable to handle EPT violation.\r\n");
-			}
 
 			break;
 		}

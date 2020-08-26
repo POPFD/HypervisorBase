@@ -7,7 +7,7 @@
 #include "Debug.h"
 
 /******************** External API ********************/
-
+extern UCHAR* PsGetProcessImageFileName(IN PEPROCESS Process);
 
 /******************** Module Typedefs ********************/
 
@@ -74,6 +74,9 @@ BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData, PCONTEXT guestContext)
 	{
 		if (VMX_EXIT_QUALIFICATION_ACCESS_MOV_TO_CR == exitQualification.AccessType)
 		{
+			/* TODO: Make it so we only switch shadows to execute if new CR3 is
+			 *		 in one of the target pages. Will be quicker. */
+
 			/* MOV CR3, XXX has taken place, this indicates a new page table has been loaded.
 			 * We should iterate through all of the shadow pages and ensure RW pages are all
 			 * set instead of execute. That way if an execute happens on one, the target
@@ -165,10 +168,10 @@ NTSTATUS VMShadow_hideExecInProcess(
 			if (NT_SUCCESS(status))
 			{
 				/* We have hidden a usermode address so we need to also monitor the PTE
-				 * in the process that relates to it, this way we can update the shadow page
-				 * guest/host translation if it gets paged back out/in. */
+					* in the process that relates to it, this way we can update the shadow page
+					* guest/host translation if it gets paged back out/in. */
 
-				 /* Get the virtual address of the page table entry that is used for the target VA. */
+					/* Get the virtual address of the page table entry that is used for the target VA. */
 				PT_LEVEL pteLevel;
 				PT_ENTRY_64* virtTargetPTE = MemManage_getPTEFromVA(tableBase, targetVA, &pteLevel);
 				if ((NULL != virtTargetPTE) && (PT_LEVEL_PTE == pteLevel))
@@ -181,9 +184,9 @@ NTSTATUS VMShadow_hideExecInProcess(
 				}
 
 				/* As we are attempting to hide exec memory in a process,
-				 * it's safe to say the hypervisor & EPT is already running.
-				 * Therefore we should invalidate the already existing EPT to flush
-				 * in the new config. */
+					* it's safe to say the hypervisor & EPT is already running.
+					* Therefore we should invalidate the already existing EPT to flush
+					* in the new config. */
 				invalidateEPT(&lpData->eptConfig);
 			}
 		}
@@ -320,9 +323,17 @@ static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, VMX_EXIT_QUALIFICATION_EP
 			/* Check to see if target process matches. */
 			CR3 guestCR3;
 			__vmx_vmread(VMCS_GUEST_CR3, &guestCR3.Flags);
+			guestCR3.Flags &= ~0xFFF;	/* Remove lower 12 bits which are used for TLB flushing. */
 
 			if ((0 == foundShadow->targetCR3.Flags) || (guestCR3.Flags == foundShadow->targetCR3.Flags))
 			{
+				if (0 != foundShadow->targetCR3.Flags)
+				{
+					PEPROCESS process = PsGetCurrentProcess();
+					UCHAR* processName = PsGetProcessImageFileName(process);
+					DEBUG_PRINT("Process: %s\tGuestCR3: %I64X\tTargetCR3: %I64X\r\n", processName, guestCR3.Flags, foundShadow->targetCR3.Flags);
+				}
+
 				/* Switch to the target execute page, this is if there it is a global shadow (no target CR3)
 				* or the CR3 matches the target. */
 				foundShadow->targetPML1E->Flags = foundShadow->executeTargetPML1E.Flags;

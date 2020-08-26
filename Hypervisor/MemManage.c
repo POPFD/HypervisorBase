@@ -8,11 +8,6 @@
 
 /******************** Module Typedefs ********************/
 
-typedef enum
-{
-	OperationRead,
-	OperationWrite
-} OPERATION_TYPE;
 
 /******************** Module Constants ********************/
 #define OFFSET_DIRECTORY_TABLE_BASE 0x028
@@ -46,13 +41,6 @@ typedef enum
 
 
 /******************** Module Prototypes ********************/
-static NTSTATUS readOrWritePhysicalAddress(
-	PMM_CONTEXT context,
-	OPERATION_TYPE type,
-	PHYSICAL_ADDRESS physicalAddress,
-	VOID* buffer,
-	SIZE_T bytesToCopy
-);
 static VOID* mapPhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS physicalAddress);
 static void unmapPhysicalAddress(PMM_CONTEXT context);
 static NTSTATUS split2MbPage(PDE_2MB_64* pdeLarge);
@@ -117,7 +105,7 @@ NTSTATUS MemManage_readVirtualAddress(PMM_CONTEXT context, CR3 tableBase, PVOID 
 	if (NT_SUCCESS(status))
 	{
 		/* Read the memory. */
-		status = readOrWritePhysicalAddress(context, OperationRead, physGuest, buffer, size);
+		status = MemManage_readPhysicalAddress(context, physGuest, buffer, size);
 	}
 
 	return status;
@@ -131,7 +119,53 @@ NTSTATUS MemManage_writeVirtualAddress(PMM_CONTEXT context, CR3 tableBase, PVOID
 	if (NT_SUCCESS(status))
 	{
 		/* Write the memory. */
-		status = readOrWritePhysicalAddress(context, OperationWrite, physGuest, buffer, size);
+		status = MemManage_writePhysicalAddress(context, physGuest, buffer, size);
+	}
+
+	return status;
+}
+
+NTSTATUS MemManage_readPhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS physicalAddress, VOID* buffer, SIZE_T bytesToCopy)
+{
+	NTSTATUS status;
+
+	/* Map the physical memory. */
+	VOID* mappedVA = mapPhysicalAddress(context, physicalAddress);
+	if (NULL != mappedVA)
+	{
+		/* Do the copy. */
+		RtlCopyMemory(buffer, mappedVA, bytesToCopy);
+
+		/* Unmap the physical memory. */
+		unmapPhysicalAddress(context);
+		status = STATUS_SUCCESS;
+	}
+	else
+	{
+		status = STATUS_NO_MEMORY;
+	}
+
+	return status;
+}
+
+NTSTATUS MemManage_writePhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS physicalAddress, VOID* buffer, SIZE_T bytesToCopy)
+{
+	NTSTATUS status;
+
+	/* Map the physical memory. */
+	VOID* mappedVA = mapPhysicalAddress(context, physicalAddress);
+	if (NULL != mappedVA)
+	{
+		/* Do the copy. */
+		RtlCopyMemory(mappedVA, buffer, bytesToCopy);
+
+		/* Unmap the physical memory. */
+		unmapPhysicalAddress(context);
+		status = STATUS_SUCCESS;
+	}
+	else
+	{
+		status = STATUS_NO_MEMORY;
 	}
 
 	return status;
@@ -153,7 +187,7 @@ NTSTATUS MemManage_getPAForGuest(PMM_CONTEXT context, CR3 tableBase, PVOID guest
 	physPML4E.QuadPart = (LONGLONG)&basePML4[indexPML4];
 
 	PML4E_64 readPML4E;
-	status = readOrWritePhysicalAddress(context, OperationRead, physPML4E, &readPML4E, sizeof(readPML4E));
+	status = MemManage_readPhysicalAddress(context, physPML4E, &readPML4E, sizeof(readPML4E));
 	if (NT_SUCCESS(status))
 	{
 		if (TRUE == readPML4E.Present)
@@ -164,7 +198,7 @@ NTSTATUS MemManage_getPAForGuest(PMM_CONTEXT context, CR3 tableBase, PVOID guest
 			physPDPTE.QuadPart = (LONGLONG)&basePDPT[indexPML3];
 
 			PDPTE_64 readPDPTE;
-			status = readOrWritePhysicalAddress(context, OperationRead, physPDPTE, &readPDPTE, sizeof(readPDPTE));
+			status = MemManage_readPhysicalAddress(context, physPDPTE, &readPDPTE, sizeof(readPDPTE));
 			if (NT_SUCCESS(status))
 			{
 				if (TRUE == readPDPTE.Present)
@@ -177,7 +211,7 @@ NTSTATUS MemManage_getPAForGuest(PMM_CONTEXT context, CR3 tableBase, PVOID guest
 						physPDE.QuadPart = (LONGLONG)&basePD[indexPML2];
 
 						PDE_64 readPDE;
-						status = readOrWritePhysicalAddress(context, OperationRead, physPDE, &readPDE, sizeof(readPDE));
+						status = MemManage_readPhysicalAddress(context, physPDE, &readPDE, sizeof(readPDE));
 						if (NT_SUCCESS(status))
 						{
 							if (TRUE == readPDE.Present)
@@ -190,7 +224,7 @@ NTSTATUS MemManage_getPAForGuest(PMM_CONTEXT context, CR3 tableBase, PVOID guest
 									physPTE.QuadPart = (LONGLONG)&basePT[indexPML1];
 
 									PTE_64 readPTE;
-									status = readOrWritePhysicalAddress(context, OperationRead, physPTE, &readPTE, sizeof(readPTE));
+									status = MemManage_readPhysicalAddress(context, physPTE, &readPTE, sizeof(readPTE));
 									if (NT_SUCCESS(status))
 									{
 										if (TRUE == readPTE.Present)
@@ -317,44 +351,6 @@ CR3 MemManage_getPageTableBase(PEPROCESS process)
 }
 
 /******************** Module Code ********************/
-
-static NTSTATUS readOrWritePhysicalAddress(
-	PMM_CONTEXT context,
-	OPERATION_TYPE type,
-	PHYSICAL_ADDRESS physicalAddress,
-	VOID* buffer,
-	SIZE_T bytesToCopy
-)
-{
-	NTSTATUS status;
-
-	/* Map the physical memory. */
-	VOID* mappedVA = mapPhysicalAddress(context, physicalAddress);
-	if (NULL != mappedVA)
-	{
-		/* Do either the read or write. */
-		if (OperationRead == type)
-		{
-			RtlCopyMemory(buffer, mappedVA, bytesToCopy);
-		}
-		else
-		{
-			/* OperationWrite */
-			RtlCopyMemory(mappedVA, buffer, bytesToCopy);
-		}
-
-		/* Unmap the physical memory. */
-		unmapPhysicalAddress(context);
-		status = STATUS_SUCCESS;
-	}
-	else
-	{
-		status = STATUS_NO_MEMORY;
-	}
-
-	return status;
-}
-
 
 static VOID* mapPhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS physicalAddress)
 {

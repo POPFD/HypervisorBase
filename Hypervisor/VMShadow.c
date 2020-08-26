@@ -19,7 +19,7 @@
 
 
 /******************** Module Prototypes ********************/
-static void handlePotentialPTEWrite(PEPT_CONFIG eptConfig);
+static void handlePotentialPTEWrite(PVMM_DATA lpData);
 static BOOLEAN handleInitialPTEWrite(PEPT_CONFIG eptConfig);
 static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, VMX_EXIT_QUALIFICATION_EPT_VIOLATION qualification);
 static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physPTE, PEPT_SHADOW_PAGE shadowPage);
@@ -112,7 +112,7 @@ BOOLEAN VMShadow_handleMTF(PVMM_DATA lpData)
 	/* MTF tracing is only enabled when we are trying to monitor writes
 	 * to PTE's due to paging in Windows. This will be used so that we
 	 * can update the guest physical address to host PA for shadowing. */
-	handlePotentialPTEWrite(&lpData->eptConfig);
+	handlePotentialPTEWrite(lpData);
 
 	return TRUE;
 }
@@ -140,7 +140,7 @@ NTSTATUS VMShadow_hidePageGlobally(
 }
 
 NTSTATUS VMShadow_hideExecInProcess(
-	PEPT_CONFIG eptConfig,
+	PVMM_DATA lpData,
 	PEPROCESS targetProcess,
 	PUINT8 targetVA,
 	PUINT8 execVA
@@ -156,32 +156,35 @@ NTSTATUS VMShadow_hideExecInProcess(
 		* I know we could calculate this by reading the PTE here and
 		* calculating, however we have a function for this already (at the expense of reading PTE again.. */
 		PHYSICAL_ADDRESS physTargetVA;
-		status = MemManage_getPhysFromVirtual(targetProcess, targetVA, &physTargetVA);
+		status = MemManage_getPAForGuest(&lpData->mmContext, tableBase, targetVA, &physTargetVA);
 		if (NT_SUCCESS(status))
 		{
 			/* Hide the executable page, for that page only. */
 			PEPT_SHADOW_PAGE shadowPage;
-			status = hidePage(eptConfig, tableBase, physTargetVA, execVA, &shadowPage);
+			status = hidePage(&lpData->eptConfig, tableBase, physTargetVA, execVA, &shadowPage);
 			if (NT_SUCCESS(status))
 			{
 				/* We have hidden a usermode address so we need to also monitor the PTE
 				 * in the process that relates to it, this way we can update the shadow page
 				 * guest/host translation if it gets paged back out/in. */
 
-				 /* Get the physical address of the page table entry that is used for the target VA. */
-				PHYSICAL_ADDRESS physTargetPTE;
-				status = MemManage_getPTEPhysAddressFromVA(targetProcess, targetVA, &physTargetPTE);
-				if (NT_SUCCESS(status))
+				 /* Get the virtual address of the page table entry that is used for the target VA. */
+				PT_LEVEL pteLevel;
+				PT_ENTRY_64* virtTargetPTE = MemManage_getPTEFromVA(tableBase, targetVA, &pteLevel);
+				if ((NULL != virtTargetPTE) && (PT_LEVEL_PTE == pteLevel))
 				{
+					/* Convert back to a physical address (not great doing phys -> virt - > phys but I'm lazy). */
+					PHYSICAL_ADDRESS physTargetPTE = MmGetPhysicalAddress(virtTargetPTE);
+
 					/* Add to the list of monitored page table entries. */
-					status = addMonitoredPTE(eptConfig, physTargetPTE, shadowPage);
+					status = addMonitoredPTE(&lpData->eptConfig, physTargetPTE, shadowPage);
 				}
 
 				/* As we are attempting to hide exec memory in a process,
 				 * it's safe to say the hypervisor & EPT is already running.
 				 * Therefore we should invalidate the already existing EPT to flush
 				 * in the new config. */
-				invalidateEPT(eptConfig);
+				invalidateEPT(&lpData->eptConfig);
 			}
 		}
 	}
@@ -196,7 +199,7 @@ NTSTATUS VMShadow_hideExecInProcess(
 
 /******************** Module Code ********************/
 
-static void handlePotentialPTEWrite(PEPT_CONFIG eptConfig)
+static void handlePotentialPTEWrite(PVMM_DATA lpData)
 {
 	/* As we have no way of detecting if the write has taken place
 	 * to the target PTE, we just iterate through all monitored and check
@@ -211,8 +214,8 @@ static void handlePotentialPTEWrite(PEPT_CONFIG eptConfig)
 	BOOLEAN updatedPTE = FALSE;
 
 	 /* Keep going through the whole linked list, until the flink points back to the root. */
-	for (PLIST_ENTRY currentEntry = eptConfig->monitoredPTEList.Flink;
-		currentEntry != &eptConfig->monitoredPTEList;
+	for (PLIST_ENTRY currentEntry = lpData->eptConfig.monitoredPTEList.Flink;
+		currentEntry != &lpData->eptConfig.monitoredPTEList;
 		currentEntry = currentEntry->Flink)
 	{
 		/* The CONTAINING_RECORD macro can uses the address of the linked list and then subtracts where the
@@ -224,7 +227,7 @@ static void handlePotentialPTEWrite(PEPT_CONFIG eptConfig)
 		physPTE.QuadPart = monitoredPTE->physAlignPTE.QuadPart + monitoredPTE->pageOffset;
 
 		PTE readPTE;
-		NTSTATUS status = MemManage_readPhysicalAddress(physPTE, sizeof(readPTE), &readPTE);
+		NTSTATUS status = MemManage_readPhysicalAddress(&lpData->mmContext, physPTE, &readPTE, sizeof(readPTE));
 		if (NT_SUCCESS(status))
 		{
 			/* Check to see if the PFN of the PTE matches the last known value of the PTE,
@@ -259,7 +262,7 @@ static void handlePotentialPTEWrite(PEPT_CONFIG eptConfig)
 		__vmx_vmwrite(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, procCtls);
 
 		/* Flush EPT as we have updated a mapping. */
-		invalidateEPT(eptConfig);
+		invalidateEPT(&lpData->eptConfig);
 	}
 }
 

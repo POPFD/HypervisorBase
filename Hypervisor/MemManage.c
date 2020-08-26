@@ -8,15 +8,6 @@
 
 /******************** Module Typedefs ********************/
 
-/* Each level of a paging structure. */
-typedef enum
-{
-	PT_LEVEL_PTE = 1,
-	PT_LEVEL_PDE = 2,
-	PT_LEVEL_PDPTE = 3,
-	PT_LEVEL_PML4E = 4
-} PT_LEVEL;
-
 typedef enum
 {
 	OperationRead,
@@ -65,7 +56,6 @@ static NTSTATUS readOrWritePhysicalAddress(
 static VOID* mapPhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS physicalAddress);
 static void unmapPhysicalAddress(PMM_CONTEXT context);
 static NTSTATUS split2MbPage(PDE_2MB_64* pdeLarge);
-static PT_ENTRY_64* getPTEFromVA(CR3 tableBase, PVOID virtualAddress, PT_LEVEL* level);
 static UINT64 physicalFromVirtual(VOID* virtualAddress);
 static VOID* virtualFromPhysical(UINT64 physicalAddress);
 
@@ -83,14 +73,14 @@ NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3)
 		/* Attempt to get the page table entry of the reserved page,
 		 * we need to ensure this is not a 2MB large page, if so we must split it. */
 		PT_LEVEL tableLevel;
-		PT_ENTRY_64* reservedPagePTE = getPTEFromVA(hostCR3, context->reservedPage, &tableLevel);
+		PT_ENTRY_64* reservedPagePTE = MemManage_getPTEFromVA(hostCR3, context->reservedPage, &tableLevel);
 		if (PT_LEVEL_PDE == tableLevel)
 		{
 			/* A split must take place. */
 			status = split2MbPage((PDE_2MB_64*)reservedPagePTE);
 
 			/* Get the new PTE. */
-			reservedPagePTE = getPTEFromVA(hostCR3, context->reservedPage, &tableLevel);
+			reservedPagePTE = MemManage_getPTEFromVA(hostCR3, context->reservedPage, &tableLevel);
 		}
 
 		/* Ensure we are still in success state, splitting could have failed. */
@@ -114,6 +104,34 @@ NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3)
 	if (NT_ERROR(status))
 	{
 		MmFreeMappingAddress(reservedPage, 0);
+	}
+
+	return status;
+}
+
+NTSTATUS MemManage_readVirtualAddress(PMM_CONTEXT context, CR3 tableBase, PVOID guestVA, PVOID buffer, SIZE_T size)
+{
+	/* Get the physical address of the guest memory. */
+	PHYSICAL_ADDRESS physGuest;
+	NTSTATUS status = MemManage_getPAForGuest(context, tableBase, guestVA, &physGuest);
+	if (NT_SUCCESS(status))
+	{
+		/* Read the memory. */
+		status = readOrWritePhysicalAddress(context, OperationRead, physGuest, buffer, size);
+	}
+
+	return status;
+}
+
+NTSTATUS MemManage_writeVirtualAddress(PMM_CONTEXT context, CR3 tableBase, PVOID guestVA, CONST PVOID buffer, SIZE_T size)
+{
+	/* Get the physical address of the guest memory. */
+	PHYSICAL_ADDRESS physGuest;
+	NTSTATUS status = MemManage_getPAForGuest(context, tableBase, guestVA, &physGuest);
+	if (NT_SUCCESS(status))
+	{
+		/* Write the memory. */
+		status = readOrWritePhysicalAddress(context, OperationWrite, physGuest, buffer, size);
 	}
 
 	return status;
@@ -219,6 +237,56 @@ NTSTATUS MemManage_getPAForGuest(PMM_CONTEXT context, CR3 tableBase, PVOID guest
 	return status;
 }
 
+PT_ENTRY_64* MemManage_getPTEFromVA(CR3 tableBase, PVOID virtualAddress, PT_LEVEL* level)
+{
+	PT_ENTRY_64* result = NULL;
+
+	/* Gather the indexes for the page tables from the VA. */
+	UINT64 indexPML4 = ADDRMASK_PML4_INDEX(virtualAddress);
+	UINT64 indexPML3 = ADDRMASK_PML3_INDEX(virtualAddress);
+	UINT64 indexPML2 = ADDRMASK_PML2_INDEX(virtualAddress);
+	UINT64 indexPML1 = ADDRMASK_PML1_INDEX(virtualAddress);
+
+	/* Read the PML4 from the target. */
+	PML4E_64* pml4 = virtualFromPhysical(tableBase.AddressOfPageDirectory * PAGE_SIZE);
+	PML4E_64* pml4e = &pml4[indexPML4];
+	if (TRUE == pml4e->Present)
+	{
+		/* Indicate we have atleast got the entry. */
+		result = (PT_ENTRY_64*)pml4e;
+		*level = PT_LEVEL_PML4E;
+
+		/* Read PML3 from the guest. */
+		PDPTE_64* pdpt = virtualFromPhysical(pml4e->PageFrameNumber * PAGE_SIZE);
+		PDPTE_64* pdpte = &pdpt[indexPML3];
+		if (TRUE == pdpte->Present)
+		{
+			result = (PT_ENTRY_64*)pdpte;
+			*level = PT_LEVEL_PDPTE;
+
+			/* Read PML2 from the guest. */
+			PDE_64* pd = virtualFromPhysical(pdpte->PageFrameNumber * PAGE_SIZE);
+			PDE_64* pde = &pd[indexPML2];
+			if ((FALSE == pdpte->LargePage) && (TRUE == pde->Present))
+			{
+				result = (PT_ENTRY_64*)pde;
+				*level = PT_LEVEL_PDE;
+
+				/* Read PML1 from the guest. */
+				PTE_64* pt = virtualFromPhysical(pde->PageFrameNumber * PAGE_SIZE);
+				PTE_64* pte = &pt[indexPML1];
+				if ((FALSE == pde->LargePage) && (TRUE == pte->Present))
+				{
+					result = (PT_ENTRY_64*)pte;
+					*level = PT_LEVEL_PTE;
+				}
+			}
+		}
+	}
+
+	return result;
+}
+
 CR3 MemManage_getPageTableBase(PEPROCESS process)
 {
 	/* As KVA shadowing is used for CR3 as a mitigation for spectre/meltdown
@@ -247,7 +315,6 @@ CR3 MemManage_getPageTableBase(PEPROCESS process)
 
 	return tableBase;
 }
-
 
 /******************** Module Code ********************/
 
@@ -346,56 +413,6 @@ static NTSTATUS split2MbPage(PDE_2MB_64* pdeLarge)
 	}
 	
 	return status;
-}
-
-static PT_ENTRY_64* getPTEFromVA(CR3 tableBase, PVOID virtualAddress, PT_LEVEL* level)
-{
-	PT_ENTRY_64* result = NULL;
-
-	/* Gather the indexes for the page tables from the VA. */
-	UINT64 indexPML4 = ADDRMASK_PML4_INDEX(virtualAddress);
-	UINT64 indexPML3 = ADDRMASK_PML3_INDEX(virtualAddress);
-	UINT64 indexPML2 = ADDRMASK_PML2_INDEX(virtualAddress);
-	UINT64 indexPML1 = ADDRMASK_PML1_INDEX(virtualAddress);
-
-	/* Read the PML4 from the target. */
-	PML4E_64* pml4 = virtualFromPhysical(tableBase.AddressOfPageDirectory * PAGE_SIZE);
-	PML4E_64* pml4e = &pml4[indexPML4];
-	if (TRUE == pml4e->Present)
-	{
-		/* Indicate we have atleast got the entry. */
-		result = (PT_ENTRY_64*)pml4e;
-		*level = PT_LEVEL_PML4E;
-
-		/* Read PML3 from the guest. */
-		PDPTE_64* pdpt = virtualFromPhysical(pml4e->PageFrameNumber * PAGE_SIZE);
-		PDPTE_64* pdpte = &pdpt[indexPML3];
-		if (TRUE == pdpte->Present)
-		{
-			result = (PT_ENTRY_64*)pdpte;
-			*level = PT_LEVEL_PDPTE;
-
-			/* Read PML2 from the guest. */
-			PDE_64* pd = virtualFromPhysical(pdpte->PageFrameNumber * PAGE_SIZE);
-			PDE_64* pde = &pd[indexPML2];
-			if ((FALSE == pdpte->LargePage) && (TRUE == pde->Present))
-			{
-				result = (PT_ENTRY_64*)pde;
-				*level = PT_LEVEL_PDE;
-
-				/* Read PML1 from the guest. */
-				PTE_64* pt = virtualFromPhysical(pde->PageFrameNumber * PAGE_SIZE);
-				PTE_64* pte = &pt[indexPML1];
-				if ((FALSE == pde->LargePage) && (TRUE == pte->Present))
-				{
-					result = (PT_ENTRY_64*)pte;
-					*level = PT_LEVEL_PTE;
-				}
-			}
-		}
-	}
-
-	return result;
 }
 
 static UINT64 physicalFromVirtual(VOID* virtualAddress)

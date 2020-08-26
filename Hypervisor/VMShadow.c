@@ -23,7 +23,7 @@ static void handlePotentialPTEWrite(PEPT_CONFIG eptConfig);
 static BOOLEAN handleInitialPTEWrite(PEPT_CONFIG eptConfig);
 static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, VMX_EXIT_QUALIFICATION_EPT_VIOLATION qualification);
 static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physPTE, PEPT_SHADOW_PAGE shadowPage);
-static NTSTATUS hidePage(PEPT_CONFIG eptConfig, ULONG64 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage, PEPT_SHADOW_PAGE* shadowPage);
+static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage, PEPT_SHADOW_PAGE* shadowPage);
 static void updateShadowPagePA(PEPT_SHADOW_PAGE shadowPage, SIZE_T pageFrameNumber);
 static PEPT_MONITORED_PTE findMonitoredPTE(PEPT_CONFIG eptConfig, UINT64 guestPA);
 static PEPT_SHADOW_PAGE findShadowPage(PEPT_CONFIG eptConfig, UINT64 guestPA);
@@ -126,8 +126,9 @@ NTSTATUS VMShadow_hidePageGlobally(
 {
 	NTSTATUS status = STATUS_INVALID_PARAMETER;
 
+	CR3 nullCR3 = { .Flags = 0 };
 	PEPT_SHADOW_PAGE shadowPage;
-	status = hidePage(eptConfig, 0, targetPA, payloadPage, &shadowPage);
+	status = hidePage(eptConfig, nullCR3, targetPA, payloadPage, &shadowPage);
 
 	if (NT_SUCCESS(status) && (TRUE == hypervisorRunning))
 	{
@@ -148,8 +149,8 @@ NTSTATUS VMShadow_hideExecInProcess(
 	NTSTATUS status;
 
 	/* Get the process/page table we want to shadow the memory from. */
-	ULONG64 tableBase = MemManage_getPageTableBase(targetProcess);
-	if (0 != tableBase)
+	CR3 tableBase = MemManage_getPageTableBase(targetProcess);
+	if (0 != tableBase.Flags)
 	{
 		/* Calculate the physical address of the target VA,
 		* I know we could calculate this by reading the PTE here and
@@ -314,10 +315,10 @@ static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, VMX_EXIT_QUALIFICATION_EP
 		if ((FALSE == qualification.EptExecutable) && (TRUE == qualification.ExecuteAccess))
 		{
 			/* Check to see if target process matches. */
-			ULONG64 guestCR3;
-			__vmx_vmread(VMCS_GUEST_CR3, &guestCR3);
+			CR3 guestCR3;
+			__vmx_vmread(VMCS_GUEST_CR3, &guestCR3.Flags);
 
-			if ((0 == foundShadow->targetCR3) || (guestCR3 == foundShadow->targetCR3))
+			if ((0 == foundShadow->targetCR3.Flags) || (guestCR3.Flags == foundShadow->targetCR3.Flags))
 			{
 				/* Switch to the target execute page, this is if there it is a global shadow (no target CR3)
 				* or the CR3 matches the target. */
@@ -406,7 +407,7 @@ static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physPTE,
 	return status;
 }
 
-static NTSTATUS hidePage(PEPT_CONFIG eptConfig, ULONG64 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage, PEPT_SHADOW_PAGE* shadowPage)
+static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage, PEPT_SHADOW_PAGE* shadowPage)
 {
 	NTSTATUS status;
 

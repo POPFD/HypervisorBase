@@ -53,22 +53,27 @@ NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 
+	if (FALSE == KD_DEBUGGER_NOT_PRESENT)
+	{
+		DbgBreakPoint();
+	}
+
 	/* Reserve a single page, this will be used for mapping in the guest 
 	 * page data into. */
-	PVOID reservedPage = MmAllocateMappingAddress(PAGE_SIZE, 0);
-	if (NULL != context->reservedPage)
+	PVOID reservedPage = ExAllocatePool(NonPagedPoolNx, PAGE_SIZE);
+	if (NULL != reservedPage)
 	{
 		/* Attempt to get the page table entry of the reserved page,
 		 * we need to ensure this is not a 2MB large page, if so we must split it. */
 		PT_LEVEL tableLevel;
-		PT_ENTRY_64* reservedPagePTE = MemManage_getPTEFromVA(hostCR3, context->reservedPage, &tableLevel);
+		PT_ENTRY_64* reservedPagePTE = MemManage_getPTEFromVA(hostCR3, reservedPage, &tableLevel);
 		if (PT_LEVEL_PDE == tableLevel)
 		{
 			/* A split must take place. */
 			status = split2MbPage((PDE_2MB_64*)reservedPagePTE);
 
 			/* Get the new PTE. */
-			reservedPagePTE = MemManage_getPTEFromVA(hostCR3, context->reservedPage, &tableLevel);
+			reservedPagePTE = MemManage_getPTEFromVA(hostCR3, reservedPage, &tableLevel);
 		}
 
 		/* Ensure we are still in success state, splitting could have failed. */
@@ -91,7 +96,7 @@ NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3)
 	 * all allocated memory to prevent leaks. */
 	if (NT_ERROR(status))
 	{
-		MmFreeMappingAddress(reservedPage, 0);
+		ExFreePool(reservedPage);
 	}
 
 	return status;

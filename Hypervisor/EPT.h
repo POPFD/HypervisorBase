@@ -48,7 +48,7 @@ typedef struct _EPT_SHADOW_PAGE
 	SIZE_T pageOffset;
 
 	/* Target process that will be hooked, NULL if global. */
-	ULONG64 targetCR3;
+	CR3 targetCR3;
 
 	/* Pointer to the PML1 entry that will be modified between RW and E. */
 	PEPT_PML1_ENTRY targetPML1E;

@@ -2,6 +2,7 @@
 #include "ia32.h"
 #include "MTRR.h"
 #include "EPT.h"
+#include "MemManage.h"
 
 /******************** Public Typedefs ********************/
 
@@ -38,8 +39,9 @@ typedef struct _VMM_DATA
 	DECLSPEC_ALIGN(PAGE_SIZE) VMCS vmxOn;
 	DECLSPEC_ALIGN(PAGE_SIZE) VMCS vmcs;
 
+	MM_CONTEXT mmContext;
 	ULONG processorIndex;
-	UINT64 hostPML4Base;
+	CR3 hostCR3;
 	CONTROL_REGISTERS controlRegisters;
 	CONTEXT hostContext;
 	LARGE_INTEGER msrData[17];

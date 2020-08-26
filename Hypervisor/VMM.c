@@ -85,23 +85,25 @@ static NTSTATUS launchVMMOnProcessor(PVMM_DATA lpData)
 
 	/* Initialise the memory manager module. */
 	status = MemManage_init(&lpData->mmContext, lpData->hostCR3);
-
-	/* Initialise EPT structure. */
-	EPT_initialise(&lpData->eptConfig, (const PMTRR_RANGE)&lpData->mtrrTable);
-
-	/* Initialise all of the pending hooks. */
-	VMHook_init(&lpData->eptConfig);
-
-	/* Attempt to enter VMX root. */
-	status = enterRootMode(lpData);
-
 	if (NT_SUCCESS(status))
 	{
-		/* Initialise VMCS for both the guest and host. */
-		setupVMCS(lpData);
+		/* Initialise EPT structure. */
+		EPT_initialise(&lpData->eptConfig, (const PMTRR_RANGE)&lpData->mtrrTable);
 
-		/* Launch hypervisor using VMX. */
-		status = launchVMX();
+		/* Initialise all of the pending hooks. */
+		VMHook_init(&lpData->eptConfig);
+
+		/* Attempt to enter VMX root. */
+		status = enterRootMode(lpData);
+
+		if (NT_SUCCESS(status))
+		{
+			/* Initialise VMCS for both the guest and host. */
+			setupVMCS(lpData);
+
+			/* Launch hypervisor using VMX. */
+			status = launchVMX();
+		}
 	}
 
 	return status;

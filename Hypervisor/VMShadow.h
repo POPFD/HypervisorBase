@@ -24,7 +24,7 @@ NTSTATUS VMShadow_hidePageGlobally(
 );
 
 NTSTATUS VMShadow_hideExecInProcess(
-	PEPT_CONFIG eptConfig,
+	PVMM_DATA lpData,
 	PEPROCESS targetProcess,
 	PUINT8 targetVA,
 	PUINT8 execVA

@@ -29,6 +29,8 @@ typedef enum
 NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3);
 NTSTATUS MemManage_readVirtualAddress(PMM_CONTEXT context, CR3 tableBase, PVOID guestVA, PVOID buffer, SIZE_T size);
 NTSTATUS MemManage_writeVirtualAddress(PMM_CONTEXT context, CR3 tableBase, PVOID guestVA, CONST PVOID buffer, SIZE_T size);
+NTSTATUS MemManage_readPhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS physicalAddress, VOID* buffer, SIZE_T bytesToCopy);
+NTSTATUS MemManage_writePhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS physicalAddress, VOID* buffer, SIZE_T bytesToCopy);
 NTSTATUS MemManage_getPAForGuest(PMM_CONTEXT context, CR3 guestTableBase, PVOID guestVA, PHYSICAL_ADDRESS* physAddr);
 PT_ENTRY_64* MemManage_getPTEFromVA(CR3 tableBase, PVOID virtualAddress, PT_LEVEL* level);
 CR3 MemManage_getPageTableBase(PEPROCESS process);

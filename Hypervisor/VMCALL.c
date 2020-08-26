@@ -84,7 +84,7 @@ static NTSTATUS actionShadowInProcess(PVMM_DATA lpData, PVOID buffer, SIZE_T buf
 		{
 			/* Tell the VMShadow module to hide the executable page at the specified
 				* address, for the target process only. */
-			status = VMShadow_hideExecInProcess(&lpData->eptConfig,
+			status = VMShadow_hideExecInProcess(lpData,
 												targetProcess,
 												params->userTargetVA, 
 												params->kernelExecPageVA);

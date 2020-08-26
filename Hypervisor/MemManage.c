@@ -2,6 +2,7 @@
 #include <ntddk.h>
 #include "MemManage.h"
 #include "ia32.h"
+#include "Debug.h"
 
 /******************** External API ********************/
 
@@ -52,11 +53,6 @@ static VOID* virtualFromPhysical(UINT64 physicalAddress);
 NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3)
 {
 	NTSTATUS status = STATUS_SUCCESS;
-
-	if (FALSE == KD_DEBUGGER_NOT_PRESENT)
-	{
-		DbgBreakPoint();
-	}
 
 	/* Reserve a single page, this will be used for mapping in the guest 
 	 * page data into. */
@@ -383,7 +379,7 @@ static NTSTATUS split2MbPage(PDE_2MB_64* pdeLarge)
 
 	/* Allocate a new page table, this will be used for splitting the 2MB
 	 * entry into 512 4kb pages, 512 8byte entries = one page. */
-	PTE_64* pt = MmAllocateMappingAddress(PAGE_SIZE, 0);
+	PTE_64* pt = ExAllocatePool(NonPagedPoolNx, PAGE_SIZE);
 	if (NULL != pt)
 	{
 		/* Close the large page bit and then propagate the current permissions to

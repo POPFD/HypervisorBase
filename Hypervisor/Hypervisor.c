@@ -40,14 +40,15 @@ NTSTATUS Hypervisor_init(void)
 	if (NT_SUCCESS(status))
 	{
 		/* Holds the CR3/PML4 entry that our HOST (when we are VMX root) will use. */
-		unsigned long long hostCR3 = __readcr3();
+		CR3 hostCR3;
+		hostCR3.Flags = __readcr3();
 
 		/* We need to notify each logical processor to start the hypervisor.
 		 * This is done using using a IPI.
 		 *
 		 * TODO: IPI result only returns callee processors status
 		 *		 We are discarding other X logical processors results, need to fix this. */
-		status = (NTSTATUS)KeIpiGenericCall(logicalProcessorInit, (ULONG_PTR)hostCR3);
+		status = (NTSTATUS)KeIpiGenericCall(logicalProcessorInit, (ULONG_PTR)hostCR3.Flags);
 	}
 
 	return status;
@@ -59,7 +60,8 @@ static ULONG_PTR logicalProcessorInit(ULONG_PTR argument)
 {
 	/* Re-cast the argument back to the correct type so we
 	 * can use it. */
-	unsigned long long hostCR3 = (unsigned long long)argument;
+	CR3 hostCR3;
+	hostCR3.Flags = argument;
 
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 
@@ -71,7 +73,7 @@ static ULONG_PTR logicalProcessorInit(ULONG_PTR argument)
 	/* We need to ensure that the logical processor this is executing on uses the correct
 	 * PML4/CR3 when we are VM ROOT / HOST so we store it in the config. */
 	lpData->processorIndex = procIndex;
-	lpData->hostPML4Base = hostCR3;
+	lpData->hostCR3 = hostCR3;
 
 	/* Initialise the VMM here. */
 	status = VMM_init(lpData);

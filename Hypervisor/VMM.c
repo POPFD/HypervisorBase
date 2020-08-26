@@ -4,6 +4,7 @@
 #include "Intrinsics.h"
 #include "MSR.h"
 #include "GDT.h"
+#include "MemManage.h"
 #include "HandlerShim.h"
 #include "Debug.h"
 #include "ia32.h"
@@ -81,6 +82,9 @@ static NTSTATUS launchVMMOnProcessor(PVMM_DATA lpData)
 
 	/* Store all of the MTRR-related MSRs. */
 	MTRR_readAll(lpData->mtrrTable);
+
+	/* Initialise the memory manager module. */
+	status = MemManage_init(&lpData->mmContext, lpData->hostCR3);
 
 	/* Initialise EPT structure. */
 	EPT_initialise(&lpData->eptConfig, (const PMTRR_RANGE)&lpData->mtrrTable);
@@ -348,7 +352,7 @@ static void setupVMCS(PVMM_DATA lpData)
 	* because we may be executing in an arbitrary user-mode process right now
 	* as part of the DPC interrupt we execute in.
 	*/
-	__vmx_vmwrite(VMCS_HOST_CR3, lpData->hostPML4Base);
+	__vmx_vmwrite(VMCS_HOST_CR3, lpData->hostCR3.Flags);
 	__vmx_vmwrite(VMCS_GUEST_CR3, controlRegisters->Cr3);
 	__vmx_vmwrite(VMCS_CTRL_CR3_TARGET_COUNT, 0);
 

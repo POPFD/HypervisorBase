@@ -44,10 +44,10 @@ BOOLEAN VMCALL_handle(PVMM_DATA lpData, PCONTEXT guestContext)
 	 */
 	if (VMCALL_KEY == guestContext->Rcx)
 	{
-		if (FALSE == KD_DEBUGGER_NOT_PRESENT)
-		{
-			DbgBreakPoint();
-		}
+		//if (FALSE == KD_DEBUGGER_NOT_PRESENT)
+		//{
+		//	DbgBreakPoint();
+		//}
 
 		PVMCALL_COMMAND guestCommand = (PVMCALL_COMMAND)guestContext->Rdx;
 

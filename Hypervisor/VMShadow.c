@@ -327,13 +327,6 @@ static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, VMX_EXIT_QUALIFICATION_EP
 
 			if ((0 == foundShadow->targetCR3.Flags) || (guestCR3.Flags == foundShadow->targetCR3.Flags))
 			{
-				if (0 != foundShadow->targetCR3.Flags)
-				{
-					PEPROCESS process = PsGetCurrentProcess();
-					UCHAR* processName = PsGetProcessImageFileName(process);
-					DEBUG_PRINT("Process: %s\tGuestCR3: %I64X\tTargetCR3: %I64X\r\n", processName, guestCR3.Flags, foundShadow->targetCR3.Flags);
-				}
-
 				/* Switch to the target execute page, this is if there it is a global shadow (no target CR3)
 				* or the CR3 matches the target. */
 				foundShadow->targetPML1E->Flags = foundShadow->executeTargetPML1E.Flags;
@@ -457,7 +450,7 @@ static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS 
 					shadowConfig->originalPML1E.Flags = shadowConfig->targetPML1E->Flags;
 
 					/* Create the executable PML1E when it IS the target process. */
-					shadowConfig->executeTargetPML1E.Flags = 0;
+					shadowConfig->executeTargetPML1E.Flags = shadowConfig->targetPML1E->Flags;
 					shadowConfig->executeTargetPML1E.ReadAccess = 0;
 					shadowConfig->executeTargetPML1E.WriteAccess = 0;
 					shadowConfig->executeTargetPML1E.ExecuteAccess = 1;

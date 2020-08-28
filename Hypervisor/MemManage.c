@@ -11,6 +11,8 @@
 
 
 /******************** Module Constants ********************/
+#define POOL_TAG '1TST'
+
 #define OFFSET_DIRECTORY_TABLE_BASE 0x028
 #define OFFSET_USER_DIR_TABLE 0x280
 
@@ -54,13 +56,13 @@ NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3)
 {
 	NTSTATUS status = STATUS_SUCCESS;
 
-	/* Reserve a single page, this will be used for mapping in the guest 
-	 * page data into. */
-	PVOID reservedPage = ExAllocatePool(NonPagedPoolNx, PAGE_SIZE);
+	/* Reserve a single page, this will be used for mapping in the guest
+		* page data into. */
+	PVOID reservedPage = MmAllocateMappingAddress(PAGE_SIZE, POOL_TAG);
 	if (NULL != reservedPage)
 	{
 		/* Attempt to get the page table entry of the reserved page,
-		 * we need to ensure this is not a 2MB large page, if so we must split it. */
+			* we need to ensure this is not a 2MB large page, if so we must split it. */
 		PT_LEVEL tableLevel;
 		PT_ENTRY_64* reservedPagePTE = MemManage_getPTEFromVA(hostCR3, reservedPage, &tableLevel);
 		if (PT_LEVEL_PDE == tableLevel)
@@ -76,7 +78,7 @@ NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3)
 		if (NT_SUCCESS(status))
 		{
 			/* Drop the translation of the virtual address,
-			 * If at any point we observe it at 0, we know nothing is "mapped". */
+				* If at any point we observe it at 0, we know nothing is "mapped". */
 			reservedPagePTE->Flags = 0;
 
 			context->reservedPage = reservedPage;
@@ -89,10 +91,10 @@ NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3)
 	}
 
 	/* If an error took place during initialisation, free
-	 * all allocated memory to prevent leaks. */
+		* all allocated memory to prevent leaks. */
 	if (NT_ERROR(status))
 	{
-		ExFreePool(reservedPage);
+		MmFreeMappingAddress(reservedPage, POOL_TAG);
 	}
 
 	return status;
@@ -299,21 +301,27 @@ PT_ENTRY_64* MemManage_getPTEFromVA(CR3 tableBase, PVOID virtualAddress, PT_LEVE
 			result = (PT_ENTRY_64*)pdpte;
 			*level = PT_LEVEL_PDPTE;
 
-			/* Read PML2 from the guest. */
-			PDE_64* pd = virtualFromPhysical(pdpte->PageFrameNumber * PAGE_SIZE);
-			PDE_64* pde = &pd[indexPML2];
-			if ((FALSE == pdpte->LargePage) && (TRUE == pde->Present))
+			/* If large page, indicates this is the last level. */
+			if (FALSE == pdpte->LargePage)
 			{
-				result = (PT_ENTRY_64*)pde;
-				*level = PT_LEVEL_PDE;
-
-				/* Read PML1 from the guest. */
-				PTE_64* pt = virtualFromPhysical(pde->PageFrameNumber * PAGE_SIZE);
-				PTE_64* pte = &pt[indexPML1];
-				if ((FALSE == pde->LargePage) && (TRUE == pte->Present))
+				/* Read PML2 from the guest. */
+				PDE_64* pd = virtualFromPhysical(pdpte->PageFrameNumber * PAGE_SIZE);
+				PDE_64* pde = &pd[indexPML2];
+				if (TRUE == pde->Present)
 				{
-					result = (PT_ENTRY_64*)pte;
-					*level = PT_LEVEL_PTE;
+					result = (PT_ENTRY_64*)pde;
+					*level = PT_LEVEL_PDE;
+
+					/* If large page, indicates this is the last level. */
+					if (FALSE == pde->LargePage)
+					{
+						/* Read PML1 from the guest. */
+						PTE_64* pt = virtualFromPhysical(pde->PageFrameNumber * PAGE_SIZE);
+						PTE_64* pte = &pt[indexPML1];
+
+						result = (PT_ENTRY_64*)pte;
+						*level = PT_LEVEL_PTE;
+					}
 				}
 			}
 		}

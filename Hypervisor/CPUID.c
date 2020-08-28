@@ -29,16 +29,16 @@ typedef enum
 
 /******************** Public Code ********************/
 
-BOOLEAN CPUID_handle(PVMM_DATA lpData, PCONTEXT guestContext)
+BOOLEAN CPUID_handle(PVMM_DATA lpData)
 {
 	UNREFERENCED_PARAMETER(lpData);
 
 	/* Call CPUID instruction based on the indexes in the logical processors RAX and RCX registers.*/
 	INT32 cpuInfo[CPUID_REGISTER_COUNT];
-	__cpuidex(cpuInfo, (INT32)guestContext->Rax, (INT32)guestContext->Rcx);
+	__cpuidex(cpuInfo, (INT32)lpData->guestContext.Rax, (INT32)lpData->guestContext.Rcx);
 
 	/* Override certain conditions. */
-	switch (guestContext->Rax)
+	switch (lpData->guestContext.Rax)
 	{
 		case CPUID_SIGNATURE:
 		{
@@ -59,10 +59,10 @@ BOOLEAN CPUID_handle(PVMM_DATA lpData, PCONTEXT guestContext)
 	}
 
 	/* Copy the modified CPU info into the guests registers. */
-	guestContext->Rax = cpuInfo[CPUID_REGISTER_EAX];
-	guestContext->Rbx = cpuInfo[CPUID_REGISTER_EBX];
-	guestContext->Rcx = cpuInfo[CPUID_REGISTER_ECX];
-	guestContext->Rdx = cpuInfo[CPUID_REGISTER_EDX];
+	lpData->guestContext.Rax = cpuInfo[CPUID_REGISTER_EAX];
+	lpData->guestContext.Rbx = cpuInfo[CPUID_REGISTER_EBX];
+	lpData->guestContext.Rcx = cpuInfo[CPUID_REGISTER_ECX];
+	lpData->guestContext.Rdx = cpuInfo[CPUID_REGISTER_EDX];
 
 	return TRUE;
 }

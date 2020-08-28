@@ -47,7 +47,6 @@ BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
 		/* Check to see if the EPT violation was due to a monitored PTE. */
 		result = handleShadowExec(eptConfig, violationQualification);
 
-
 		/* Check to see if the EPT violation was due to a monitored PTE. */
 		if (FALSE == result)
 		{
@@ -207,8 +206,6 @@ static void handlePotentialPTEWrite(PVMM_DATA lpData)
 	 * if any of the PFN's in the PTE have been modified, if so we update
 	 * the guest -> host mapping. */
 
-	BOOLEAN updatedPTE = FALSE;
-
 	 /* Keep going through the whole linked list, until the flink points back to the root. */
 	for (PLIST_ENTRY currentEntry = lpData->eptConfig.monitoredPTEList.Flink;
 		currentEntry != &lpData->eptConfig.monitoredPTEList;
@@ -218,40 +215,35 @@ static void handlePotentialPTEWrite(PVMM_DATA lpData)
 		* list entry is stored in the structure from the address to give us the address of the parent. */
 		PEPT_MONITORED_PTE currentConfig = CONTAINING_RECORD(currentEntry, EPT_MONITORED_PTE, listEntry);
 
-		if (FALSE == KD_DEBUGGER_NOT_PRESENT)
-		{
-			DbgBreakPoint();
-		}
-
 		/* Check to see if the PFN of the PTE matches the last known value of the PTE,
 			* if it doesn't that means paging has taken place. */
 		if (currentConfig->virtTargetPTE->Flags != currentConfig->lastTargetPTE.Flags)
 		{
+			if (FALSE == KD_DEBUGGER_NOT_PRESENT)
+			{
+				DbgBreakPoint();
+			}
+
 			/* We need to update the VM Shadow related to this. */
 			updateShadowPagePA(currentConfig);
 
-			/* Set the PTE so that it cannot be written again, so we can trap on next changes. */
-			currentConfig->targetPML1E->WriteAccess = 0;
-
 			/* Re-enable the hook. */
 			currentConfig->shadowPage->targetPML1E->Flags = currentConfig->shadowPage->activeRWPML1E.Flags;
-
-			updatedPTE = TRUE;
 		}
+
+		/* Set the PTE so that it cannot be written again, so we can trap on next changes. */
+		currentConfig->targetPML1E->WriteAccess = 0;
 	}
 
-	if (TRUE == updatedPTE)
-	{
-		/* Disable MTF tracing. */
-		SIZE_T procCtls;
-		__vmx_vmread(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, &procCtls);
+	/* Disable MTF tracing. */
+	SIZE_T procCtls;
+	__vmx_vmread(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, &procCtls);
 
-		procCtls &= ~IA32_VMX_PROCBASED_CTLS_MONITOR_TRAP_FLAG_FLAG;
-		__vmx_vmwrite(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, procCtls);
+	procCtls &= ~IA32_VMX_PROCBASED_CTLS_MONITOR_TRAP_FLAG_FLAG;
+	__vmx_vmwrite(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, procCtls);
 
-		/* Flush EPT as we have updated a mapping. */
-		invalidateEPT(&lpData->eptConfig);
-	}
+	/* Flush EPT as we have updated a mapping/write access. */
+	invalidateEPT(&lpData->eptConfig);
 }
 
 static BOOLEAN handleInitialPTEWrite(PEPT_CONFIG eptConfig)
@@ -269,10 +261,10 @@ static BOOLEAN handleInitialPTEWrite(PEPT_CONFIG eptConfig)
 	PEPT_MONITORED_PTE foundMonitored = findMonitoredPTE(eptConfig, guestPA);
 	if (NULL != foundMonitored)
 	{
-		if (FALSE == KD_DEBUGGER_NOT_PRESENT)
-		{
-			DbgBreakPoint();
-		}
+		//if (FALSE == KD_DEBUGGER_NOT_PRESENT)
+		//{
+		//	DbgBreakPoint();
+		//}
 
 		/* Enable MTF tracing so that we can trace to the instruction after it has been written. */
 		SIZE_T procCtls;

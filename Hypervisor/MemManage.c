@@ -287,42 +287,35 @@ PT_ENTRY_64* MemManage_getPTEFromVA(CR3 tableBase, PVOID virtualAddress, PT_LEVE
 	/* Read the PML4 from the target. */
 	PML4E_64* pml4 = virtualFromPhysical(tableBase.AddressOfPageDirectory * PAGE_SIZE);
 	PML4E_64* pml4e = &pml4[indexPML4];
+
+	result = (PT_ENTRY_64*)pml4e;
+	*level = PT_LEVEL_PML4E;
 	if (TRUE == pml4e->Present)
 	{
-		/* Indicate we have atleast got the entry. */
-		result = (PT_ENTRY_64*)pml4e;
-		*level = PT_LEVEL_PML4E;
-
 		/* Read PML3 from the guest. */
 		PDPTE_64* pdpt = virtualFromPhysical(pml4e->PageFrameNumber * PAGE_SIZE);
 		PDPTE_64* pdpte = &pdpt[indexPML3];
-		if (TRUE == pdpte->Present)
+
+		result = (PT_ENTRY_64*)pdpte;
+		*level = PT_LEVEL_PDPTE;
+
+		/* Only attempt to get lower level if present and not a large page. */
+		if ((TRUE == pdpte->Present) && (FALSE == pdpte->LargePage))
 		{
-			result = (PT_ENTRY_64*)pdpte;
-			*level = PT_LEVEL_PDPTE;
+			/* Read PML2 from the guest. */
+			PDE_64* pd = virtualFromPhysical(pdpte->PageFrameNumber * PAGE_SIZE);
+			PDE_64* pde = &pd[indexPML2];
 
-			/* If large page, indicates this is the last level. */
-			if (FALSE == pdpte->LargePage)
+			result = (PT_ENTRY_64*)pde;
+			*level = PT_LEVEL_PDE;
+			if ((TRUE == pde->Present) && (FALSE == pde->LargePage))
 			{
-				/* Read PML2 from the guest. */
-				PDE_64* pd = virtualFromPhysical(pdpte->PageFrameNumber * PAGE_SIZE);
-				PDE_64* pde = &pd[indexPML2];
-				if (TRUE == pde->Present)
-				{
-					result = (PT_ENTRY_64*)pde;
-					*level = PT_LEVEL_PDE;
+					/* Read PML1 from the guest. */
+					PTE_64* pt = virtualFromPhysical(pde->PageFrameNumber * PAGE_SIZE);
+					PTE_64* pte = &pt[indexPML1];
 
-					/* If large page, indicates this is the last level. */
-					if (FALSE == pde->LargePage)
-					{
-						/* Read PML1 from the guest. */
-						PTE_64* pt = virtualFromPhysical(pde->PageFrameNumber * PAGE_SIZE);
-						PTE_64* pte = &pt[indexPML1];
-
-						result = (PT_ENTRY_64*)pte;
-						*level = PT_LEVEL_PTE;
-					}
-				}
+					result = (PT_ENTRY_64*)pte;
+					*level = PT_LEVEL_PTE;
 			}
 		}
 	}

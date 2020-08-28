@@ -66,12 +66,6 @@ typedef struct _EPT_SHADOW_PAGE
 * this is to account for paging changes on the EPT shadow hooked pages. */
 typedef struct _EPT_MONITORED_PTE
 {
-	/* Aligned physical address of the PTE. */
-	PHYSICAL_ADDRESS physAlignPTE;
-
-	/* Offset into the aligned page that the PTE exists. */
-	SIZE_T pageOffset;
-
 	/* Pointer to the shadow page hook to be modified. */
 	PEPT_SHADOW_PAGE shadowPage;
 
@@ -81,7 +75,8 @@ typedef struct _EPT_MONITORED_PTE
 
 	/* Stored the value of the last paging entry and it's level,
 	 * if at any point this is modified we need to adjust our hooks. */
-	PT_ENTRY_64 lastEntryPTE;
+	PT_ENTRY_64* virtTargetPTE;
+	PT_ENTRY_64 lastTargetPTE;
 	SIZE_T lastEntryLevel;
 
 	/* List entry for the monitored PTE, so we can keep a list of all
@@ -105,7 +100,7 @@ typedef struct _EPT_DYNAMIC_SPLIT
 
 typedef struct _EPT_CONFIG
 {
-	/* Describes 512 contiguous 512GB memory regions each with 512 1GB regions. */
+	/* Describes 512 contiguous 512GB memory regions each with 512 512GB regions. */
 	DECLSPEC_ALIGN(PAGE_SIZE) EPT_PML4_POINTER PML4[EPT_PML4E_COUNT];
 
 	/* Describes exactly 512 contiguous 1GB memory regions within a singular PML4 region. */

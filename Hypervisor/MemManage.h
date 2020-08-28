@@ -32,5 +32,5 @@ NTSTATUS MemManage_writeVirtualAddress(PMM_CONTEXT context, CR3 tableBase, PVOID
 NTSTATUS MemManage_readPhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS physicalAddress, VOID* buffer, SIZE_T bytesToCopy);
 NTSTATUS MemManage_writePhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS physicalAddress, VOID* buffer, SIZE_T bytesToCopy);
 NTSTATUS MemManage_getPAForGuest(PMM_CONTEXT context, CR3 guestTableBase, PVOID guestVA, PHYSICAL_ADDRESS* physAddr);
-PT_ENTRY_64* MemManage_getPTEFromVA(CR3 tableBase, PVOID virtualAddress, PT_LEVEL* level);
+PHYSICAL_ADDRESS MemManage_getPTEForGuest(PMM_CONTEXT context, CR3 tableBase, PVOID virtualAddress, PT_LEVEL* level);
 CR3 MemManage_getPageTableBase(PEPROCESS process);

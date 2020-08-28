@@ -29,7 +29,7 @@ static const fnActionHandler ACTION_HANDLERS[VMCALL_ACTION_COUNT] =
 
 /******************** Public Code ********************/
 
-BOOLEAN VMCALL_handle(PVMM_DATA lpData, PCONTEXT guestContext)
+BOOLEAN VMCALL_handle(PVMM_DATA lpData)
 {
 	UNREFERENCED_PARAMETER(lpData);
 
@@ -42,23 +42,23 @@ BOOLEAN VMCALL_handle(PVMM_DATA lpData, PCONTEXT guestContext)
 	 *	RCX = Secret Key
 	 *	RDX = VMCALL Command Buffer
 	 */
-	if (VMCALL_KEY == guestContext->Rcx)
+	if (VMCALL_KEY == lpData->guestContext.Rcx)
 	{
 		//if (FALSE == KD_DEBUGGER_NOT_PRESENT)
 		//{
 		//	DbgBreakPoint();
 		//}
 
-		PVMCALL_COMMAND guestCommand = (PVMCALL_COMMAND)guestContext->Rdx;
+		PVMCALL_COMMAND guestCommand = (PVMCALL_COMMAND)lpData->guestContext.Rdx;
 
 		/* Call the specific action handler for the command and put the result NTSTATUS into RAX. */
 		if (guestCommand->action < VMCALL_ACTION_COUNT)
 		{
-			guestContext->Rax = ACTION_HANDLERS[guestCommand->action](lpData, guestCommand->buffer, guestCommand->bufferSize);
+			lpData->guestContext.Rax = ACTION_HANDLERS[guestCommand->action](lpData, guestCommand->buffer, guestCommand->bufferSize);
 		}
 		else
 		{
-			guestContext->Rax = (ULONG64)STATUS_INVALID_PARAMETER;
+			lpData->guestContext.Rax = (ULONG64)STATUS_INVALID_PARAMETER;
 		}
 
 		result = TRUE;

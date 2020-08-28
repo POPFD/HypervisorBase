@@ -24,7 +24,7 @@ static volatile ULONG64 tscOffset = 0;
 static volatile ULONG64 lastGuestTSC = 0;
 
 /******************** Module Prototypes ********************/
-static void handleExitReason(PVMM_DATA lpData, PCONTEXT guestContext);
+static void handleExitReason(PVMM_DATA lpData);
 static void indicateVMXFail(void);
 
 /******************** Public Code ********************/
@@ -60,10 +60,13 @@ DECLSPEC_NORETURN VOID Handlers_guestToHost(PCONTEXT guestContext)
 	/* Find the LP_DATA structure by using the context variable that was passed in (technically the stack). */
 	PVMM_DATA lpData = (VOID*)((uintptr_t)(guestContext + 1) - KERNEL_STACK_SIZE);
 
+	/* Copy the guest context into our LP data structure. */
+	RtlCopyMemory(&lpData->guestContext, guestContext, sizeof(CONTEXT));
+
 	UINT64 exitTSCStart = __rdtsc();
 
 	/* Handle the exit reason. */
-	handleExitReason(lpData, guestContext);
+	handleExitReason(lpData);
 
 	UINT64 exitTSCTime = __rdtsc() - exitTSCStart;
 	UINT64 correctionTime = exitTSCTime + VM_EXIT_OVERHEAD;
@@ -76,15 +79,15 @@ DECLSPEC_NORETURN VOID Handlers_guestToHost(PCONTEXT guestContext)
 	/* In the assembly stub code there was a PUSH RCX instruction we used,
 	* we need to account for that here and negate the effect of it. This is easily
 	* done by adjusting the stack pointer by the size of the register */
-	guestContext->Rsp += sizeof(guestContext->Rcx);
+	lpData->guestContext.Rsp += sizeof(lpData->guestContext.Rcx);
 
 	/* We now set our desired instruction pointer at the VMXResume handler,
 	* We use the restore context function to do this rather than a call to ensure
 	* that we are in the EXACT same state as we were prior to this function. */
-	guestContext->Rip = (UINT64)Handlers_VMResume;
+	lpData->guestContext.Rip = (UINT64)Handlers_VMResume;
 
 	/* Restore the context. */
-	_RestoreContext(guestContext, NULL);
+	_RestoreContext(&lpData->guestContext, NULL);
 }
 
 DECLSPEC_NORETURN void Handlers_VMResume(void)
@@ -99,7 +102,7 @@ DECLSPEC_NORETURN void Handlers_VMResume(void)
 
 /******************** Module Code ********************/
 
-static void handleExitReason(PVMM_DATA lpData, PCONTEXT guestContext)
+static void handleExitReason(PVMM_DATA lpData)
 {
 	BOOLEAN moveToNextInstruction = FALSE;
 
@@ -128,13 +131,13 @@ static void handleExitReason(PVMM_DATA lpData, PCONTEXT guestContext)
 			lastGuestTSC = guestTSC;
 
 			/* Set the guest registers to the TSC value. */
-			guestContext->Rdx = (UINT32)(guestTSC >> 32);
-			guestContext->Rax = (UINT32)(guestTSC & 0xFFFFFFFF);
+			lpData->guestContext.Rdx = (UINT32)(guestTSC >> 32);
+			lpData->guestContext.Rax = (UINT32)(guestTSC & 0xFFFFFFFF);
 
 			/* Set the auxiliary TSC value if RDTSCP was reason. */
 			if (VMX_EXIT_REASON_EXECUTE_RDTSCP == exitReason)
 			{
-				guestContext->Rcx = (UINT32)__readmsr(IA32_TSC_AUX);
+				lpData->guestContext.Rcx = (UINT32)__readmsr(IA32_TSC_AUX);
 			}
 
 			moveToNextInstruction = TRUE;
@@ -157,7 +160,7 @@ static void handleExitReason(PVMM_DATA lpData, PCONTEXT guestContext)
 		{
 			/* If we have handled the MOV to/from CR correctly,
 			 * we go to the next instruction. */
-			moveToNextInstruction = VMShadow_handleMovCR(lpData, guestContext);
+			moveToNextInstruction = VMShadow_handleMovCR(lpData);
 			break;
 		}
 
@@ -177,17 +180,17 @@ static void handleExitReason(PVMM_DATA lpData, PCONTEXT guestContext)
 
 		case VMX_EXIT_REASON_EXECUTE_XSETBV:
 		{
-			_xsetbv((UINT32)guestContext->Rcx, guestContext->Rdx << 32 | guestContext->Rax);
+			_xsetbv((UINT32)lpData->guestContext.Rcx, lpData->guestContext.Rdx << 32 | lpData->guestContext.Rax);
 			moveToNextInstruction = TRUE;
 			break;
 		}
 
 		case VMX_EXIT_REASON_EXECUTE_RDMSR:
 		{
-			UINT64 msrResult = __readmsr((UINT32)guestContext->Rcx);
+			UINT64 msrResult = __readmsr((UINT32)lpData->guestContext.Rcx);
 
-			guestContext->Rdx = msrResult >> 32;
-			guestContext->Rax = msrResult & 0xFFFFFFFF;
+			lpData->guestContext.Rdx = msrResult >> 32;
+			lpData->guestContext.Rax = msrResult & 0xFFFFFFFF;
 			moveToNextInstruction = TRUE;
 			break;
 		}
@@ -195,12 +198,12 @@ static void handleExitReason(PVMM_DATA lpData, PCONTEXT guestContext)
 		case VMX_EXIT_REASON_EXECUTE_WRMSR:
 		{
 			/* Only take 32 bits from each register. */
-			UINT32 highBits = (UINT32)guestContext->Rdx;
-			UINT32 lowBits = (UINT32)guestContext->Rax;
+			UINT32 highBits = (UINT32)lpData->guestContext.Rdx;
+			UINT32 lowBits = (UINT32)lpData->guestContext.Rax;
 
 			UINT64 value = ((UINT64)highBits << 32) | lowBits;
 
-			__writemsr((UINT32)guestContext->Rcx, value);
+			__writemsr((UINT32)lpData->guestContext.Rcx, value);
 
 			moveToNextInstruction = TRUE;
 			break;
@@ -208,7 +211,7 @@ static void handleExitReason(PVMM_DATA lpData, PCONTEXT guestContext)
 
 		case VMX_EXIT_REASON_EXECUTE_CPUID:
 		{
-			if (TRUE == CPUID_handle(lpData, guestContext))
+			if (TRUE == CPUID_handle(lpData))
 			{
 				moveToNextInstruction = TRUE;
 			}
@@ -217,7 +220,7 @@ static void handleExitReason(PVMM_DATA lpData, PCONTEXT guestContext)
 
 		case VMX_EXIT_REASON_EXECUTE_VMCALL:
 		{
-			if (TRUE == VMCALL_handle(lpData, guestContext))
+			if (TRUE == VMCALL_handle(lpData))
 			{
 				moveToNextInstruction = TRUE;
 			}

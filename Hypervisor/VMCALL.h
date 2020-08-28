@@ -10,4 +10,4 @@
 
 /******************** Public Prototypes ********************/
 
-BOOLEAN VMCALL_handle(PVMM_DATA lpData, PCONTEXT guestContext);
+BOOLEAN VMCALL_handle(PVMM_DATA lpData);

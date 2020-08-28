@@ -64,7 +64,7 @@ BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
 	return result;
 }
 
-BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData, PCONTEXT guestContext)
+BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData)
 {
 	/* Cast the exit qualification to its proper type. */
 	VMX_EXIT_QUALIFICATION_MOV_CR exitQualification;
@@ -86,7 +86,7 @@ BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData, PCONTEXT guestContext)
 			invalidateEPT(&lpData->eptConfig);
 
 			/* Set the guest CR3 register, to the value of the general purpose register. */
-			ULONG64* registerList = &guestContext->Rax;
+			ULONG64* registerList = &lpData->guestContext.Rax;
 
 			ULONG64 registerValue;
 			if (VMX_EXIT_QUALIFICATION_GENREG_RSP == exitQualification.GeneralPurposeRegister)

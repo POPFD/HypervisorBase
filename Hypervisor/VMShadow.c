@@ -323,9 +323,8 @@ static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, VMX_EXIT_QUALIFICATION_EP
 			/* Check to see if target process matches. */
 			CR3 guestCR3;
 			__vmx_vmread(VMCS_GUEST_CR3, &guestCR3.Flags);
-			guestCR3.Flags &= ~0xFFF;	/* Remove lower 12 bits which are used for TLB flushing. */
 
-			if ((0 == foundShadow->targetCR3.Flags) || (guestCR3.Flags == foundShadow->targetCR3.Flags))
+			if ((0 == foundShadow->targetCR3.Flags) || (guestCR3.AddressOfPageDirectory == foundShadow->targetCR3.AddressOfPageDirectory))
 			{
 				/* Switch to the target execute page, this is if there it is a global shadow (no target CR3)
 				* or the CR3 matches the target. */

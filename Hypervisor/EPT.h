@@ -75,8 +75,8 @@ typedef struct _EPT_MONITORED_PTE
 
 	/* Stored the value of the last paging entry and it's level,
 	 * if at any point this is modified we need to adjust our hooks. */
-	PT_ENTRY_64* virtTargetPTE;
-	PT_ENTRY_64 lastTargetPTE;
+	PHYSICAL_ADDRESS physTargetPTE;
+	PT_ENTRY_64 lastPTEValue;
 	SIZE_T lastEntryLevel;
 
 	/* List entry for the monitored PTE, so we can keep a list of all

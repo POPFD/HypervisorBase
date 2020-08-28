@@ -7,7 +7,7 @@
 #include "Debug.h"
 
 /******************** External API ********************/
-extern UCHAR* PsGetProcessImageFileName(IN PEPROCESS Process);
+
 
 /******************** Module Typedefs ********************/
 
@@ -22,7 +22,7 @@ extern UCHAR* PsGetProcessImageFileName(IN PEPROCESS Process);
 static void handlePotentialPTEWrite(PVMM_DATA lpData);
 static BOOLEAN handleInitialPTEWrite(PEPT_CONFIG eptConfig);
 static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, VMX_EXIT_QUALIFICATION_EPT_VIOLATION qualification);
-static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physPTE, PEPT_SHADOW_PAGE shadowPage);
+static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PT_ENTRY_64* virtPTE, PT_LEVEL ptLevel, PEPT_SHADOW_PAGE shadowPage);
 static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage, PEPT_SHADOW_PAGE* shadowPage);
 static void updateShadowPagePA(PEPT_SHADOW_PAGE shadowPage, SIZE_T pageFrameNumber);
 static PEPT_MONITORED_PTE findMonitoredPTE(PEPT_CONFIG eptConfig, UINT64 guestPA);
@@ -168,25 +168,22 @@ NTSTATUS VMShadow_hideExecInProcess(
 			if (NT_SUCCESS(status))
 			{
 				/* We have hidden a usermode address so we need to also monitor the PTE
-					* in the process that relates to it, this way we can update the shadow page
-					* guest/host translation if it gets paged back out/in. */
+				 * in the process that relates to it, this way we can update the shadow page
+				 * guest/host translation if it gets paged back out/in. */
 
-					/* Get the virtual address of the page table entry that is used for the target VA. */
+				/* Get the virtual address of the page table entry that is used for the target VA. */
 				PT_LEVEL pteLevel;
 				PT_ENTRY_64* virtTargetPTE = MemManage_getPTEFromVA(tableBase, targetVA, &pteLevel);
-				if ((NULL != virtTargetPTE) && (PT_LEVEL_PTE == pteLevel))
+				if (NULL != virtTargetPTE)
 				{
-					/* Convert back to a physical address (not great doing phys -> virt - > phys but I'm lazy). */
-					PHYSICAL_ADDRESS physTargetPTE = MmGetPhysicalAddress(virtTargetPTE);
-
 					/* Add to the list of monitored page table entries. */
-					status = addMonitoredPTE(&lpData->eptConfig, physTargetPTE, shadowPage);
+					status = addMonitoredPTE(&lpData->eptConfig, virtTargetPTE, pteLevel, shadowPage);
 				}
 
 				/* As we are attempting to hide exec memory in a process,
-					* it's safe to say the hypervisor & EPT is already running.
-					* Therefore we should invalidate the already existing EPT to flush
-					* in the new config. */
+				 * it's safe to say the hypervisor & EPT is already running.
+			     * Therefore we should invalidate the already existing EPT to flush
+				 * in the new config. */
 				invalidateEPT(&lpData->eptConfig);
 			}
 		}
@@ -352,10 +349,12 @@ static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, VMX_EXIT_QUALIFICATION_EP
 	return result;
 }
 
-static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physPTE, PEPT_SHADOW_PAGE shadowPage)
+static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PT_ENTRY_64* virtPTE, PT_LEVEL ptLevel, PEPT_SHADOW_PAGE shadowPage)
 {
 	NTSTATUS status;
 
+	/* Get the physical address of the PTE. */
+	PHYSICAL_ADDRESS physPTE = MmGetPhysicalAddress(virtPTE);
 	if (0ULL != physPTE.QuadPart)
 	{
 		PEPT_MONITORED_PTE configMonPTE = (PEPT_MONITORED_PTE)ExAllocatePool(NonPagedPoolNx, sizeof(EPT_MONITORED_PTE));
@@ -386,6 +385,10 @@ static NTSTATUS addMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physPTE,
 					/* Set the PML1E so that it is not writable, this will cause a VMEXIT
 					 * if an attempt to write to the guest PTE takes place (paging change of phys address). */
 					configMonPTE->targetPML1E->WriteAccess = 0;
+
+					/* Also store the last page frame number. */
+					UNREFERENCED_PARAMETER(ptLevel);
+					configMonPTE->lastGuestPFN = virtPTE->PageFrameNumber;
 
 					/* Add this config to the list of monitored page table entries. */
 					InsertHeadList(&eptConfig->monitoredPTEList, &configMonPTE->listEntry);

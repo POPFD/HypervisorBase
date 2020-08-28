@@ -44,9 +44,6 @@ typedef struct _EPT_SHADOW_PAGE
 	/* Base address of the page that is being shadowed. */
 	PHYSICAL_ADDRESS physicalAlign;
 
-	/* Offset into the aligned page that the PTE exists. */
-	SIZE_T pageOffset;
-
 	/* Target process that will be hooked, NULL if global. */
 	CR3 targetCR3;
 
@@ -56,9 +53,9 @@ typedef struct _EPT_SHADOW_PAGE
 	/* Will store the flags of the specific PML1E's that will be
 	 * used for targetting shadowing. */
 	EPT_PML1_ENTRY originalPML1E;
-	EPT_PML1_ENTRY executeTargetPML1E;
-	EPT_PML1_ENTRY executeNotTargetPML1E;
-	EPT_PML1_ENTRY readWritePML1E;
+	EPT_PML1_ENTRY activeExecTargetPML1E;
+	EPT_PML1_ENTRY activeExecNotTargetPML1E;
+	EPT_PML1_ENTRY activeRWPML1E;
 
 	/* List entry for the page hook, this will be used to keep track of
 	* all shadow pages. */
@@ -82,9 +79,10 @@ typedef struct _EPT_MONITORED_PTE
 	* of a page table entry write. */
 	PEPT_PML1_ENTRY targetPML1E;
 
-	/* Stored the value of the last Page Frame Number of the PTE,
-	* this is used so we can compare to check if paging has taken place. */
-	SIZE_T lastGuestPFN;
+	/* Stored the value of the last paging entry and it's level,
+	 * if at any point this is modified we need to adjust our hooks. */
+	PT_ENTRY_64 lastEntryPTE;
+	SIZE_T lastEntryLevel;
 
 	/* List entry for the monitored PTE, so we can keep a list of all
 	* monitored page table entries. */

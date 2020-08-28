@@ -177,88 +177,24 @@ NTSTATUS MemManage_writePhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS ph
 
 NTSTATUS MemManage_getPAForGuest(PMM_CONTEXT context, CR3 tableBase, PVOID guestVA, PHYSICAL_ADDRESS* physAddr)
 {
-	NTSTATUS status;
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
 
-	/* Gather the indexes for the page tables from the VA. */
-	UINT64 indexPML4 = ADDRMASK_PML4_INDEX(guestVA);
-	UINT64 indexPML3 = ADDRMASK_PML3_INDEX(guestVA);
-	UINT64 indexPML2 = ADDRMASK_PML2_INDEX(guestVA);
-	UINT64 indexPML1 = ADDRMASK_PML1_INDEX(guestVA);
-
-	/* Read the PML4. */
-	PHYSICAL_ADDRESS physPML4E;
-	PML4E_64* basePML4 = (PML4E_64*)(tableBase.AddressOfPageDirectory * PAGE_SIZE);
-	physPML4E.QuadPart = (LONGLONG)&basePML4[indexPML4];
-
-	PML4E_64 readPML4E;
-	status = MemManage_readPhysicalAddress(context, physPML4E, &readPML4E, sizeof(readPML4E));
-	if (NT_SUCCESS(status))
+	/* Get the address of the page table entry for the guestVA. */
+	PT_LEVEL tableLevel;
+	PHYSICAL_ADDRESS physPTE = MemManage_getPTEAddrForGuest(context, tableBase, guestVA, &tableLevel);
+	if (0 != physPTE.QuadPart)
 	{
-		if (TRUE == readPML4E.Present)
+		if (PT_LEVEL_PTE == tableLevel)
 		{
-			/* Read the PML3. */
-			PHYSICAL_ADDRESS physPDPTE;
-			PDPTE_64* basePDPT = (PDPTE_64*)(readPML4E.PageFrameNumber * PAGE_SIZE);
-			physPDPTE.QuadPart = (LONGLONG)&basePDPT[indexPML3];
-
-			PDPTE_64 readPDPTE;
-			status = MemManage_readPhysicalAddress(context, physPDPTE, &readPDPTE, sizeof(readPDPTE));
+			/* Attempt to read the PTE for this config. */
+			PT_ENTRY_64 readPTE;
+			status = MemManage_readPhysicalAddress(context, physPTE, &readPTE, sizeof(readPTE));
 			if (NT_SUCCESS(status))
 			{
-				if (TRUE == readPDPTE.Present)
+				/* Ensure it is present. */
+				if (TRUE == readPTE.Present)
 				{
-					if (FALSE == readPDPTE.LargePage)
-					{
-						/* Read the PML2. */
-						PHYSICAL_ADDRESS physPDE;
-						PDE_64* basePD = (PDE_64*)(readPDPTE.PageFrameNumber * PAGE_SIZE);
-						physPDE.QuadPart = (LONGLONG)&basePD[indexPML2];
-
-						PDE_64 readPDE;
-						status = MemManage_readPhysicalAddress(context, physPDE, &readPDE, sizeof(readPDE));
-						if (NT_SUCCESS(status))
-						{
-							if (TRUE == readPDE.Present)
-							{
-								if (FALSE == readPDE.LargePage)
-								{
-									/* Read the PML1. */
-									PHYSICAL_ADDRESS physPTE;
-									PTE_64* basePT = (PTE_64*)(readPDE.PageFrameNumber * PAGE_SIZE);
-									physPTE.QuadPart = (LONGLONG)&basePT[indexPML1];
-
-									PTE_64 readPTE;
-									status = MemManage_readPhysicalAddress(context, physPTE, &readPTE, sizeof(readPTE));
-									if (NT_SUCCESS(status))
-									{
-										if (TRUE == readPTE.Present)
-										{
-											physAddr->QuadPart = (readPTE.PageFrameNumber * PAGE_SIZE) +
-																 ADDRMASK_PML1_OFFSET(guestVA);
-										}
-										else
-										{
-											status = STATUS_NO_MEMORY;
-										}
-									}
-								}
-								else
-								{
-									/* TODO: Deal with 2MB large pages here. */
-									DbgBreakPoint();
-								}
-							}
-							else
-							{
-								status = STATUS_NO_MEMORY;
-							}
-						}
-					}
-					else
-					{
-						/* TODO: Deal with 1GB large pages here. */
-						DbgBreakPoint();
-					}
+					physAddr->QuadPart = (readPTE.PageFrameNumber * PAGE_SIZE) + ADDRMASK_PML1_OFFSET(guestVA);
 				}
 				else
 				{
@@ -268,14 +204,15 @@ NTSTATUS MemManage_getPAForGuest(PMM_CONTEXT context, CR3 tableBase, PVOID guest
 		}
 		else
 		{
-			status = STATUS_NO_MEMORY;
+			/* Not yet supported. */
+			DbgBreakPoint();
 		}
 	}
 
 	return status;
 }
 
-PHYSICAL_ADDRESS MemManage_getPTEForGuest(PMM_CONTEXT context, CR3 tableBase, PVOID virtualAddress, PT_LEVEL* level)
+PHYSICAL_ADDRESS MemManage_getPTEAddrForGuest(PMM_CONTEXT context, CR3 tableBase, PVOID virtualAddress, PT_LEVEL* level)
 {
 	PHYSICAL_ADDRESS result = { .QuadPart = 0 };
 

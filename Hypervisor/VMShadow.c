@@ -173,7 +173,7 @@ NTSTATUS VMShadow_hideExecInProcess(
 
 				/* Get the physical address of the page table entry that is used for the target VA. */
 				PT_LEVEL pteLevel;
-				PHYSICAL_ADDRESS physTargetPTE = MemManage_getPTEForGuest(&lpData->mmContext, tableBase, targetVA, &pteLevel);
+				PHYSICAL_ADDRESS physTargetPTE = MemManage_getPTEAddrForGuest(&lpData->mmContext, tableBase, targetVA, &pteLevel);
 				if (0 != physTargetPTE.QuadPart)
 				{
 					/* Add to the list of monitored page table entries. */
@@ -220,15 +220,15 @@ static void handlePotentialPTEWrite(PVMM_DATA lpData)
 		NTSTATUS status = MemManage_readPhysicalAddress(&lpData->mmContext, currentConfig->physTargetPTE, &readPTE, sizeof(readPTE));
 		if (NT_SUCCESS(status))
 		{
+			if (FALSE == KD_DEBUGGER_NOT_PRESENT)
+			{
+				DbgBreakPoint();
+			}
+
 			/* Check to see if the PFN of the PTE matches the last known value of the PTE,
 			* if it doesn't that means paging has taken place. */
 			if (readPTE.Flags != currentConfig->lastPTEValue.Flags)
 			{
-				if (FALSE == KD_DEBUGGER_NOT_PRESENT)
-				{
-					DbgBreakPoint();
-				}
-
 				/* We need to update the VM Shadow related to this. */
 				updateShadowPagePA(currentConfig, &readPTE);
 
@@ -269,10 +269,10 @@ static BOOLEAN handleInitialPTEWrite(PEPT_CONFIG eptConfig)
 	PEPT_MONITORED_PTE foundMonitored = findMonitoredPTE(eptConfig, guestPA);
 	if (NULL != foundMonitored)
 	{
-		//if (FALSE == KD_DEBUGGER_NOT_PRESENT)
-		//{
-		//	DbgBreakPoint();
-		//}
+		if (FALSE == KD_DEBUGGER_NOT_PRESENT)
+		{
+			DbgBreakPoint();
+		}
 
 		/* Enable MTF tracing so that we can trace to the instruction after it has been written. */
 		SIZE_T procCtls;

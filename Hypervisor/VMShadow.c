@@ -24,7 +24,7 @@ static BOOLEAN handleInitialPTEWrite(PEPT_CONFIG eptConfig);
 static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, VMX_EXIT_QUALIFICATION_EPT_VIOLATION qualification);
 static NTSTATUS addMonitoredPTE(PVMM_DATA lpData, PHYSICAL_ADDRESS physPTE, PT_LEVEL ptLevel, PEPT_SHADOW_PAGE shadowPage);
 static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage, PEPT_SHADOW_PAGE* shadowPage);
-static void updateShadowPagePA(PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* newPTE);
+static void updateShadowPagePA(PEPT_CONFIG eptConfig, PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* newPTE);
 static PEPT_MONITORED_PTE findMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA);
 static PEPT_SHADOW_PAGE findShadowPage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA);
 static void setAllShadowsToReadWrite(PEPT_CONFIG eptConfig);
@@ -218,18 +218,8 @@ static void handlePotentialPTEWrite(PVMM_DATA lpData)
 		NTSTATUS status = MemManage_readPhysicalAddress(&lpData->mmContext, currentConfig->physTargetPTE, &readPTE, sizeof(readPTE));
 		if (NT_SUCCESS(status))
 		{
-			/* Check to see if the PFN of the PTE matches the last known value of the PTE,
-			* if it doesn't that means paging has taken place. */
-			if (readPTE.PageFrameNumber != currentConfig->lastPTEValue.PageFrameNumber)
-			{
-				if (FALSE == KD_DEBUGGER_NOT_PRESENT)
-				{
-					DbgBreakPoint();
-				}
-
-				/* We need to update the VM Shadow related to this. */
-				updateShadowPagePA(currentConfig, &readPTE);
-			}
+			/* We need to update the VM Shadow related to this. */
+			updateShadowPagePA(&lpData->eptConfig, currentConfig, &readPTE);
 		}
 
 		/* Set the PTE so that it cannot be written again, so we can trap on next changes. */
@@ -272,7 +262,7 @@ static BOOLEAN handleInitialPTEWrite(PEPT_CONFIG eptConfig)
 		/* Enable the write bit for the PTE, so that the guest can write to it. */
 		foundMonitored->targetPML1E->WriteAccess = 1;
 
-		/* Disable the hook while we are tracing. */
+		/* Disable the shadow page while we are monitoring. */
 		foundMonitored->shadowPage->targetPML1E->Flags = foundMonitored->shadowPage->originalPML1E.Flags;
 
 		/* Flush EPT as we have updated a mapping. */
@@ -354,23 +344,18 @@ static NTSTATUS addMonitoredPTE(PVMM_DATA lpData, PHYSICAL_ADDRESS physPTE, PT_L
 			configMonPTE->targetPML1E = EPT_getPML1EFromAddress(&lpData->eptConfig, physPTE);
 			if (NULL != configMonPTE->targetPML1E)
 			{
-				/* Read the current page table entry information. */
-				status = MemManage_readPhysicalAddress(&lpData->mmContext, physPTE, &configMonPTE->lastPTEValue, sizeof(PT_ENTRY_64));
-				if (NT_SUCCESS(status))
-				{
-					/* Store the information on the PTE we have read. */
-					configMonPTE->physTargetPTE = physPTE;
-					configMonPTE->lastEntryLevel = ptLevel;
+				/* Store the information on the PTE we have read. */
+				configMonPTE->physTargetPTE = physPTE;
+				configMonPTE->lastEntryLevel = ptLevel;
 
-					/* Set the PML1E so that it is not writable, this will cause a VMEXIT
-					* if an attempt to write to the guest PTE takes place (paging change of phys address). */
-					configMonPTE->targetPML1E->WriteAccess = 0;
+				/* Set the PML1E so that it is not writable, this will cause a VMEXIT
+				* if an attempt to write to the guest PTE takes place (paging change of phys address). */
+				configMonPTE->targetPML1E->WriteAccess = 0;
 
-					/* Add this config to the list of monitored page table entries. */
-					InsertHeadList(&lpData->eptConfig.monitoredPTEList, &configMonPTE->listEntry);
+				/* Add this config to the list of monitored page table entries. */
+				InsertHeadList(&lpData->eptConfig.monitoredPTEList, &configMonPTE->listEntry);
 
-					status = STATUS_SUCCESS;
-				}
+				status = STATUS_SUCCESS;
 			}
 			else
 			{
@@ -476,62 +461,83 @@ static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS 
 	return status;
 }
 
-static void updateShadowPagePA(PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* newPTE)
+static void updateShadowPagePA(PEPT_CONFIG eptConfig, PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* newPTE)
 {
 	/* If it has been paged back in, then we update the entry.
 	 * if it hasn't then we do nothing. */
 	if (TRUE == newPTE->Present)
 	{
-		//DEBUG_PRINT("Present: %I64X\tOld Page Frame Number: 0x%I64X\tNew Page Frame Number: 0x%I64X\r\n", newPTE->Present, monitoredPte->lastPTEValue.PageFrameNumber, newPTE->PageFrameNumber);
-
 		/* Calculate the new physical address as where our shadow should be. */
 		PHYSICAL_ADDRESS physNewTarget;
 		switch (monitoredPte->lastEntryLevel)
 		{
-		case PT_LEVEL_PDPTE:
+			case PT_LEVEL_PDPTE:
+			{
+				physNewTarget.QuadPart = newPTE->PageFrameNumber * SIZE_1GB;
+				break;
+			}
+
+			case PT_LEVEL_PDE:
+			{
+				physNewTarget.QuadPart = newPTE->PageFrameNumber * SIZE_2MB;
+				break;
+			}
+
+			case PT_LEVEL_PTE:
+			{
+				physNewTarget.QuadPart = newPTE->PageFrameNumber * PAGE_SIZE;
+				break;
+			}
+
+			case PT_LEVEL_PML4E:
+			default:
+			{
+				/* Not possible to be this. */
+				physNewTarget.QuadPart = 0;
+				DbgBreakPoint();
+				break;
+			}
+		}
+
+		if ((LONGLONG)PAGE_ALIGN(physNewTarget.QuadPart) != monitoredPte->shadowPage->physicalAlign.QuadPart)
 		{
-			physNewTarget.QuadPart = newPTE->PageFrameNumber * SIZE_1GB;
-			break;
+			DEBUG_PRINT("Old Physical Addr: 0x%I64X\tNew Physical Address: 0x%I64X\r\n", monitoredPte->shadowPage->physicalAlign.QuadPart, physNewTarget.QuadPart);
+			if (FALSE == KD_DEBUGGER_NOT_PRESENT)
+			{
+				DbgBreakPoint();
+			}
 		}
 
-		case PT_LEVEL_PDE:
+		/* As we have set up PDT to 2MB large pages we need to split this for performance.
+		* The lowest we can split it to is the size of a page, 2MB = 512 * 4096 blocks. */
+		NTSTATUS status = EPT_splitLargePage(eptConfig, physNewTarget);
+
+		/* If the page split was successful or was already split, continue. */
+		if (NT_SUCCESS(status) || (STATUS_ALREADY_COMPLETE == status))
 		{
-			physNewTarget.QuadPart = newPTE->PageFrameNumber * SIZE_2MB;
-			break;
+			/* Update the aligned physical address. */
+			monitoredPte->shadowPage->physicalAlign.QuadPart = (LONGLONG)PAGE_ALIGN(physNewTarget.QuadPart);
+
+			/* Gather the new PML1E address. */
+			monitoredPte->shadowPage->targetPML1E = EPT_getPML1EFromAddress(eptConfig, physNewTarget);
+
+			if (NULL != monitoredPte->shadowPage->targetPML1E)
+			{
+				/* Calculate the page number of the physical memory. */
+				SIZE_T newPageNumber = physNewTarget.QuadPart / PAGE_SIZE;
+
+				/* Update the PFN's and PA in the entry,
+				* We DO NOT modify the executeTarget entry as this should point
+				* to the physical address of our executeOnly target buffer. */
+				monitoredPte->shadowPage->originalPML1E.PageFrameNumber = newPageNumber;
+				monitoredPte->shadowPage->activeExecNotTargetPML1E.PageFrameNumber = newPageNumber;
+				monitoredPte->shadowPage->activeRWPML1E.PageFrameNumber = newPageNumber;
+
+				/* Re-enable the hook. */
+				monitoredPte->shadowPage->targetPML1E->Flags = monitoredPte->shadowPage->activeRWPML1E.Flags;
+			}
 		}
-
-		case PT_LEVEL_PTE:
-		{
-			physNewTarget.QuadPart = newPTE->PageFrameNumber * PAGE_SIZE;
-			break;
-		}
-
-		case PT_LEVEL_PML4E:
-		default:
-		{
-			/* Not possible to be this. */
-			physNewTarget.QuadPart = 0;
-			DbgBreakPoint();
-			break;
-		}
-		}
-
-		SIZE_T newPageNumber = physNewTarget.QuadPart / PAGE_SIZE;
-
-		/* Update the PFN's and PA in the entry,
-		 * We DO NOT modify the executeTarget entry as this should point
-		 * to the physical address of our executeOnly target buffer. */
-		monitoredPte->shadowPage->physicalAlign = physNewTarget;
-		monitoredPte->shadowPage->originalPML1E.PageFrameNumber = newPageNumber;
-		monitoredPte->shadowPage->activeExecNotTargetPML1E.PageFrameNumber = newPageNumber;
-		monitoredPte->shadowPage->activeRWPML1E.PageFrameNumber = newPageNumber;
-
-		/* Re-enable the hook. */
-		monitoredPte->shadowPage->targetPML1E->Flags = monitoredPte->shadowPage->activeRWPML1E.Flags;
 	}
-
-	/* Store the page frame number so we can monitor for paging at a later point. */
-	monitoredPte->lastPTEValue.Flags = newPTE->Flags;
 }
 
 static PEPT_MONITORED_PTE findMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA)

@@ -110,14 +110,12 @@ BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData)
 	return TRUE;
 }
 
-BOOLEAN VMShadow_handleMTF(PVMM_DATA lpData)
+void VMShadow_handleMTF(PVMM_DATA lpData)
 {
 	/* MTF tracing is only enabled when we are trying to monitor writes
 	 * to PTE's due to paging in Windows. This will be used so that we
 	 * can update the guest physical address to host PA for shadowing. */
 	handlePotentialPTEWrite(lpData);
-
-	return TRUE;
 }
 
 NTSTATUS VMShadow_hidePageGlobally(
@@ -220,15 +218,15 @@ static void handlePotentialPTEWrite(PVMM_DATA lpData)
 		NTSTATUS status = MemManage_readPhysicalAddress(&lpData->mmContext, currentConfig->physTargetPTE, &readPTE, sizeof(readPTE));
 		if (NT_SUCCESS(status))
 		{
-			if (FALSE == KD_DEBUGGER_NOT_PRESENT)
-			{
-				DbgBreakPoint();
-			}
-
 			/* Check to see if the PFN of the PTE matches the last known value of the PTE,
 			* if it doesn't that means paging has taken place. */
-			if (readPTE.Flags != currentConfig->lastPTEValue.Flags)
+			if (readPTE.PageFrameNumber != currentConfig->lastPTEValue.PageFrameNumber)
 			{
+				if (FALSE == KD_DEBUGGER_NOT_PRESENT)
+				{
+					DbgBreakPoint();
+				}
+
 				/* We need to update the VM Shadow related to this. */
 				updateShadowPagePA(currentConfig, &readPTE);
 
@@ -236,8 +234,6 @@ static void handlePotentialPTEWrite(PVMM_DATA lpData)
 				currentConfig->shadowPage->targetPML1E->Flags = currentConfig->shadowPage->activeRWPML1E.Flags;
 			}
 		}
-
-
 
 		/* Set the PTE so that it cannot be written again, so we can trap on next changes. */
 		currentConfig->targetPML1E->WriteAccess = 0;
@@ -269,10 +265,10 @@ static BOOLEAN handleInitialPTEWrite(PEPT_CONFIG eptConfig)
 	PEPT_MONITORED_PTE foundMonitored = findMonitoredPTE(eptConfig, guestPA);
 	if (NULL != foundMonitored)
 	{
-		if (FALSE == KD_DEBUGGER_NOT_PRESENT)
-		{
-			DbgBreakPoint();
-		}
+		//if (FALSE == KD_DEBUGGER_NOT_PRESENT)
+		//{
+		//	DbgBreakPoint();
+		//}
 
 		/* Enable MTF tracing so that we can trace to the instruction after it has been written. */
 		SIZE_T procCtls;

@@ -167,7 +167,8 @@ static void handleExitReason(PVMM_DATA lpData)
 		case VMX_EXIT_REASON_MONITOR_TRAP_FLAG:
 		{
 			/* If we have handled the MTF successfully, move to the next instruction. */
-			moveToNextInstruction = VMShadow_handleMTF(lpData);
+			VMShadow_handleMTF(lpData);
+			moveToNextInstruction = FALSE;
 			break;
 		}
 

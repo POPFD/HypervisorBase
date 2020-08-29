@@ -14,7 +14,7 @@
 /******************** Public Prototypes ********************/
 BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig);
 BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData);
-BOOLEAN VMShadow_handleMTF(PVMM_DATA lpData);
+void VMShadow_handleMTF(PVMM_DATA lpData);
 
 NTSTATUS VMShadow_hidePageGlobally(
 	PEPT_CONFIG eptConfig,

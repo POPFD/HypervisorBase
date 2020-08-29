@@ -24,7 +24,7 @@ static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, VMX_EXIT_QUALIFICATION_EP
 static PEPT_MONITORED_PTE addMonitoredPTE(PVMM_DATA lpData, CR3 tableBase, PVOID targetVA, PEPT_SHADOW_PAGE shadowPage);
 static void removeMonitoredPTE(PEPT_MONITORED_PTE monitoredPTE);
 static PEPT_MONITORED_PTE findMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA);
-static void updateShadowPagePA(PEPT_CONFIG eptConfig, PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* newPTE, PT_LEVEL level);
+static void updateShadowPagePA(PEPT_CONFIG eptConfig, PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* newPTE);
 static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage, PEPT_SHADOW_PAGE* shadowPage);
 static PHYSICAL_ADDRESS calcPhysicalAddressFromPFN(UINT64 pageFrameNumber, PT_LEVEL level);
 static PEPT_SHADOW_PAGE findShadowPage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA);
@@ -199,8 +199,6 @@ NTSTATUS VMShadow_hideExecInProcess(
 
 static void handlePotentialPTEWrite(PVMM_DATA lpData)
 {
-	//DbgBreakPoint();
-
 	/* Iterate through each of the monitored PTE's and check
 	 * to see if any have been modified. */
 	for (PLIST_ENTRY currentEntry = lpData->eptConfig.monitoredPTEList.Flink;
@@ -211,31 +209,17 @@ static void handlePotentialPTEWrite(PVMM_DATA lpData)
 		* list entry is stored in the structure from the address to give us the address of the parent. */
 		PEPT_MONITORED_PTE monitoredPTE = CONTAINING_RECORD(currentEntry, EPT_MONITORED_PTE, listEntry);
 
-		/* Attempt to get the PTE for the current entry, using CR3 and VA.
-		 * if it differs to what was previously there we need to amend. */
-		PT_LEVEL ptLevel;
-		PHYSICAL_ADDRESS physPTE = MemManage_getPTEAddrForGuest(&lpData->mmContext, monitoredPTE->targetCR3, monitoredPTE->targetVA, &ptLevel);
-		
-		if (physPTE.QuadPart != monitoredPTE->physPTE.QuadPart)
+		/* PTE physical address hasn't changed, so now we just look for differences in the PTE. */
+		PT_ENTRY_64 readPTE;
+		NTSTATUS status = MemManage_readPhysicalAddress(&lpData->mmContext, monitoredPTE->physPTE, &readPTE, sizeof(readPTE));
+		if (NT_SUCCESS(status))
 		{
-			/* It looks like the PTE table address has changed, so we must modify the PTE. */
-			/* TODO: Implement. */
-			DbgBreakPoint();
+			updateShadowPagePA(&lpData->eptConfig, monitoredPTE, &readPTE);
 		}
 		else
 		{
-			/* PTE physical address hasn't changed, so now we just look for differences in the PTE. */
-			PT_ENTRY_64 readPTE;
-			NTSTATUS status = MemManage_readPhysicalAddress(&lpData->mmContext, physPTE, &readPTE, sizeof(readPTE));
-			if (NT_SUCCESS(status))
-			{
-				updateShadowPagePA(&lpData->eptConfig, monitoredPTE, &readPTE, ptLevel);
-			}
-			else
-			{
-				/* DEBUG: Something went wrong here. */
-				DbgBreakPoint();
-			}
+			/* DEBUG: Something went wrong here. */
+			DbgBreakPoint();
 		}
 
 		/* Set it back so another write to the address will trigger a EPT violation. */
@@ -258,8 +242,6 @@ static BOOLEAN handleInitialPTEWrite(PEPT_CONFIG eptConfig)
 	 * determine which PTE it is, and then enable MTF tracing so we can determine
 	 * the change. */
 	BOOLEAN result = FALSE;
-
-	//DbgBreakPoint();
 
 	/* Get the guest physical address that caused the violation. */
 	PHYSICAL_ADDRESS guestPA;
@@ -357,10 +339,9 @@ static PEPT_MONITORED_PTE addMonitoredPTE(PVMM_DATA lpData, CR3 tableBase, PVOID
 				if (NULL != monitoredPTE->targetPML1E)
 				{
 					/* Store all the relevant information relating to the monitored PT in the config. */
-					monitoredPTE->targetCR3 = tableBase;
-					monitoredPTE->targetVA = targetVA;
 					monitoredPTE->shadowPage = shadowPage;
 					monitoredPTE->physPTE = physTargetPTE;
+					monitoredPTE->pagingLevel = ptLevel;
 
 					monitoredPTE->targetPML1E->WriteAccess = 0;
 
@@ -425,14 +406,14 @@ static PEPT_MONITORED_PTE findMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRE
 	return result;
 }
 
-static void updateShadowPagePA(PEPT_CONFIG eptConfig, PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* newPTE, PT_LEVEL level)
+static void updateShadowPagePA(PEPT_CONFIG eptConfig, PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* newPTE)
 {
 	/* If it has been paged back in, then we update the entry.
 	* if it hasn't then we do nothing. */
 	if (TRUE == newPTE->Present)
 	{
 		/* Calculate the new physical address as where our shadow should be. */
-		PHYSICAL_ADDRESS physNewTarget = calcPhysicalAddressFromPFN(newPTE->PageFrameNumber, level);
+		PHYSICAL_ADDRESS physNewTarget = calcPhysicalAddressFromPFN(newPTE->PageFrameNumber, monitoredPte->pagingLevel);
 
 		if ((LONGLONG)PAGE_ALIGN(physNewTarget.QuadPart) != monitoredPte->shadowPage->physicalAlign.QuadPart)
 		{

@@ -482,6 +482,8 @@ static void updateShadowPagePA(PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* new
 	 * if it hasn't then we do nothing. */
 	if (TRUE == newPTE->Present)
 	{
+		//DEBUG_PRINT("Present: %I64X\tOld Page Frame Number: 0x%I64X\tNew Page Frame Number: 0x%I64X\r\n", newPTE->Present, monitoredPte->lastPTEValue.PageFrameNumber, newPTE->PageFrameNumber);
+
 		/* Calculate the new physical address as where our shadow should be. */
 		PHYSICAL_ADDRESS physNewTarget;
 		switch (monitoredPte->lastEntryLevel)

@@ -417,7 +417,7 @@ static void updateShadowPagePA(PEPT_CONFIG eptConfig, PEPT_MONITORED_PTE monitor
 
 		if ((LONGLONG)PAGE_ALIGN(physNewTarget.QuadPart) != monitoredPte->shadowPage->physicalAlign.QuadPart)
 		{
-			DEBUG_PRINT("Old Physical Addr: 0x%I64X\tNew Physical Address: 0x%I64X\r\n", monitoredPte->shadowPage->physicalAlign.QuadPart, physNewTarget.QuadPart);
+			//DEBUG_PRINT("Old Physical Addr: 0x%I64X\tNew Physical Address: 0x%I64X\r\n", monitoredPte->shadowPage->physicalAlign.QuadPart, physNewTarget.QuadPart);
 			if (FALSE == KD_DEBUGGER_NOT_PRESENT)
 			{
 				DbgBreakPoint();

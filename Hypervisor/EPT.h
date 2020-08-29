@@ -66,20 +66,20 @@ typedef struct _EPT_SHADOW_PAGE
 * this is to account for paging changes on the EPT shadow hooked pages. */
 typedef struct _EPT_MONITORED_PTE
 {
-	/* Pointer to the shadow page hook to be modified. */
-	PEPT_SHADOW_PAGE shadowPage;
+	/* Hold the target CR3 and the VA. */
+	CR3 targetCR3;
+	PVOID targetVA;
 
-	/* Pointer to the PML1 entry that will be used modified for detection
-	* of a page table entry write. */
+	/* Hold the physical address of the target PTE. */
+	PHYSICAL_ADDRESS physPTE;
+
+	/* Pointer to the EPT PML1 entry that will have the write bit toggled. */
 	PEPT_PML1_ENTRY targetPML1E;
 
-	/* Stored the value of the last paging entry and it's level,
-	 * if at any point this is modified we need to adjust our hooks. */
-	PHYSICAL_ADDRESS physTargetPTE;
-	SIZE_T lastEntryLevel;
+	/* Pointer to the shadow page this relates to. */
+	PEPT_SHADOW_PAGE shadowPage;
 
-	/* List entry for the monitored PTE, so we can keep a list of all
-	* monitored page table entries. */
+	/* List entry for the dynamic split, will be used to keep track of all split entries. */
 	LIST_ENTRY listEntry;
 } EPT_MONITORED_PTE, *PEPT_MONITORED_PTE;
 

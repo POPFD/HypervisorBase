@@ -66,12 +66,11 @@ typedef struct _EPT_SHADOW_PAGE
 * this is to account for paging changes on the EPT shadow hooked pages. */
 typedef struct _EPT_MONITORED_PTE
 {
-	/* Hold the target CR3 and the VA. */
-	CR3 targetCR3;
-	PVOID targetVA;
-
 	/* Hold the physical address of the target PTE. */
 	PHYSICAL_ADDRESS physPTE;
+
+	/* Holds the level the PT belonds at. */
+	SIZE_T pagingLevel;
 
 	/* Pointer to the EPT PML1 entry that will have the write bit toggled. */
 	PEPT_PML1_ENTRY targetPML1E;

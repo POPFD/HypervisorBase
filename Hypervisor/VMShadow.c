@@ -3,7 +3,6 @@
 #include "VMShadow.h"
 #include "MemManage.h"
 #include "Intrinsics.h"
-#include "Paging.h"
 #include "Debug.h"
 
 /******************** External API ********************/
@@ -22,10 +21,12 @@
 static void handlePotentialPTEWrite(PVMM_DATA lpData);
 static BOOLEAN handleInitialPTEWrite(PEPT_CONFIG eptConfig);
 static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, VMX_EXIT_QUALIFICATION_EPT_VIOLATION qualification);
-static NTSTATUS addMonitoredPTE(PVMM_DATA lpData, PHYSICAL_ADDRESS physPTE, PT_LEVEL ptLevel, PEPT_SHADOW_PAGE shadowPage);
-static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage, PEPT_SHADOW_PAGE* shadowPage);
-static void updateShadowPagePA(PEPT_CONFIG eptConfig, PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* newPTE);
+static PEPT_MONITORED_PTE addMonitoredPTE(PVMM_DATA lpData, CR3 tableBase, PVOID targetVA, PEPT_SHADOW_PAGE shadowPage);
+static void removeMonitoredPTE(PEPT_MONITORED_PTE monitoredPTE);
 static PEPT_MONITORED_PTE findMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA);
+static void updateShadowPagePA(PEPT_CONFIG eptConfig, PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* newPTE, PT_LEVEL level);
+static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage, PEPT_SHADOW_PAGE* shadowPage);
+static PHYSICAL_ADDRESS calcPhysicalAddressFromPFN(UINT64 pageFrameNumber, PT_LEVEL level);
 static PEPT_SHADOW_PAGE findShadowPage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA);
 static void setAllShadowsToReadWrite(PEPT_CONFIG eptConfig);
 static void invalidateEPT(PEPT_CONFIG eptConfig);
@@ -168,16 +169,15 @@ NTSTATUS VMShadow_hideExecInProcess(
 				/* We have hidden a usermode address so we need to also monitor the PTE
 				 * in the process that relates to it, this way we can update the shadow page
 				 * guest/host translation if it gets paged back out/in. */
-
-				/* Get the physical address of the page table entry that is used for the target VA. */
-				PT_LEVEL pteLevel;
-				PHYSICAL_ADDRESS physTargetPTE = MemManage_getPTEAddrForGuest(&lpData->mmContext, tableBase, targetVA, &pteLevel);
-				if (0 != physTargetPTE.QuadPart)
+				if (NULL != addMonitoredPTE(lpData, tableBase, targetVA, shadowPage))
 				{
-					/* Add to the list of monitored page table entries. */
-					status = addMonitoredPTE(lpData, physTargetPTE, pteLevel, shadowPage);
+					status = STATUS_SUCCESS;
 				}
-
+				else
+				{
+					status = STATUS_UNSUCCESSFUL;
+				}
+				
 				/* As we are attempting to hide exec memory in a process,
 				 * it's safe to say the hypervisor & EPT is already running.
 			     * Therefore we should invalidate the already existing EPT to flush
@@ -199,73 +199,85 @@ NTSTATUS VMShadow_hideExecInProcess(
 
 static void handlePotentialPTEWrite(PVMM_DATA lpData)
 {
-	/* As we have no way of detecting if the write has taken place
-	 * to the target PTE, we just iterate through all monitored and check
-	 * if any of the PFN's in the PTE have been modified, if so we update
-	 * the guest -> host mapping. */
+	//DbgBreakPoint();
 
-	 /* Keep going through the whole linked list, until the flink points back to the root. */
+	/* Iterate through each of the monitored PTE's and check
+	 * to see if any have been modified. */
 	for (PLIST_ENTRY currentEntry = lpData->eptConfig.monitoredPTEList.Flink;
 		currentEntry != &lpData->eptConfig.monitoredPTEList;
 		currentEntry = currentEntry->Flink)
 	{
 		/* The CONTAINING_RECORD macro can uses the address of the linked list and then subtracts where the
 		* list entry is stored in the structure from the address to give us the address of the parent. */
-		PEPT_MONITORED_PTE currentConfig = CONTAINING_RECORD(currentEntry, EPT_MONITORED_PTE, listEntry);
+		PEPT_MONITORED_PTE monitoredPTE = CONTAINING_RECORD(currentEntry, EPT_MONITORED_PTE, listEntry);
 
-		/* Attempt to read the PTE for this config. */
-		PT_ENTRY_64 readPTE;
-		NTSTATUS status = MemManage_readPhysicalAddress(&lpData->mmContext, currentConfig->physTargetPTE, &readPTE, sizeof(readPTE));
-		if (NT_SUCCESS(status))
+		/* Attempt to get the PTE for the current entry, using CR3 and VA.
+		 * if it differs to what was previously there we need to amend. */
+		PT_LEVEL ptLevel;
+		PHYSICAL_ADDRESS physPTE = MemManage_getPTEAddrForGuest(&lpData->mmContext, monitoredPTE->targetCR3, monitoredPTE->targetVA, &ptLevel);
+		
+		if (physPTE.QuadPart != monitoredPTE->physPTE.QuadPart)
 		{
-			/* We need to update the VM Shadow related to this. */
-			updateShadowPagePA(&lpData->eptConfig, currentConfig, &readPTE);
+			/* It looks like the PTE table address has changed, so we must modify the PTE. */
+			/* TODO: Implement. */
+			DbgBreakPoint();
+		}
+		else
+		{
+			/* PTE physical address hasn't changed, so now we just look for differences in the PTE. */
+			PT_ENTRY_64 readPTE;
+			NTSTATUS status = MemManage_readPhysicalAddress(&lpData->mmContext, physPTE, &readPTE, sizeof(readPTE));
+			if (NT_SUCCESS(status))
+			{
+				updateShadowPagePA(&lpData->eptConfig, monitoredPTE, &readPTE, ptLevel);
+			}
+			else
+			{
+				/* DEBUG: Something went wrong here. */
+				DbgBreakPoint();
+			}
 		}
 
-		/* Set the PTE so that it cannot be written again, so we can trap on next changes. */
-		currentConfig->targetPML1E->WriteAccess = 0;
+		/* Set it back so another write to the address will trigger a EPT violation. */
+		monitoredPTE->targetPML1E->WriteAccess = 0;
 	}
 
 	/* Disable MTF tracing. */
-	SIZE_T procCtls;
-	__vmx_vmread(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, &procCtls);
+	IA32_VMX_PROCBASED_CTLS_REGISTER procCtls;
+	__vmx_vmread(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, &procCtls.Flags);
+	procCtls.MonitorTrapFlag = FALSE;
+	__vmx_vmwrite(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, procCtls.Flags);
 
-	procCtls &= ~IA32_VMX_PROCBASED_CTLS_MONITOR_TRAP_FLAG_FLAG;
-	__vmx_vmwrite(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, procCtls);
-
-	/* Flush EPT as we have updated a mapping/write access. */
+	/* Flush the EPT config as we may have modified it. */
 	invalidateEPT(&lpData->eptConfig);
 }
 
 static BOOLEAN handleInitialPTEWrite(PEPT_CONFIG eptConfig)
 {
-	/* The initial write will be when the virtual memory get's paged out,
-	 * setting the PTE to Not Present. So we enable MTF tracing, until the
-	 * page frame number of the PTE has been updated. */
+	/* This will take place when a monitored PTE is written to, we need to
+	 * determine which PTE it is, and then enable MTF tracing so we can determine
+	 * the change. */
 	BOOLEAN result = FALSE;
+
+	//DbgBreakPoint();
 
 	/* Get the guest physical address that caused the violation. */
 	PHYSICAL_ADDRESS guestPA;
 	__vmx_vmread(VMCS_GUEST_PHYSICAL_ADDRESS, (SIZE_T*)&guestPA.QuadPart);
 
-	/* Find the monitored PTE entry. */
-	PEPT_MONITORED_PTE foundMonitored = findMonitoredPTE(eptConfig, guestPA);
-	if (NULL != foundMonitored)
+	PEPT_MONITORED_PTE monitoredPTE = findMonitoredPTE(eptConfig, guestPA);
+	if (NULL != monitoredPTE)
 	{
-		/* Enable MTF tracing so that we can trace to the instruction after it has been written. */
-		SIZE_T procCtls;
-		__vmx_vmread(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, &procCtls);
+		/* Enable MTF tracing here. */
+		IA32_VMX_PROCBASED_CTLS_REGISTER procCtls;
+		__vmx_vmread(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, &procCtls.Flags);
+		procCtls.MonitorTrapFlag = TRUE;
+		__vmx_vmwrite(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, procCtls.Flags);
 
-		procCtls |= IA32_VMX_PROCBASED_CTLS_MONITOR_TRAP_FLAG_FLAG;
-		__vmx_vmwrite(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, procCtls);
+		/* Set the write bit to 1 so we can single step the write. */
+		monitoredPTE->targetPML1E->WriteAccess = 1;
 
-		/* Enable the write bit for the PTE, so that the guest can write to it. */
-		foundMonitored->targetPML1E->WriteAccess = 1;
-
-		/* Disable the shadow page while we are monitoring. */
-		foundMonitored->shadowPage->targetPML1E->Flags = foundMonitored->shadowPage->originalPML1E.Flags;
-
-		/* Flush EPT as we have updated a mapping. */
+		/* Flush the EPT config as we have modified it. */
 		invalidateEPT(eptConfig);
 
 		result = TRUE;
@@ -321,56 +333,146 @@ static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, VMX_EXIT_QUALIFICATION_EP
 	return result;
 }
 
-static NTSTATUS addMonitoredPTE(PVMM_DATA lpData, PHYSICAL_ADDRESS physPTE, PT_LEVEL ptLevel, PEPT_SHADOW_PAGE shadowPage)
+static PEPT_MONITORED_PTE addMonitoredPTE(PVMM_DATA lpData, CR3 tableBase, PVOID targetVA, PEPT_SHADOW_PAGE shadowPage)
 {
-	NTSTATUS status;
+	PEPT_MONITORED_PTE result = NULL;
 
-	PEPT_MONITORED_PTE configMonPTE = (PEPT_MONITORED_PTE)ExAllocatePool(NonPagedPoolNx, sizeof(EPT_MONITORED_PTE));
-	if (NULL != configMonPTE)
+	/* Allocate a buffer for the monitored page table entry. */
+	PEPT_MONITORED_PTE monitoredPTE = (PEPT_MONITORED_PTE)ExAllocatePool(NonPagedPoolNx, sizeof(EPT_MONITORED_PTE));
+	if (NULL != monitoredPTE)
 	{
-		/* As we have set up PDT to 2MB large pages we need to split this for performance.
-		* The lowest we can split it to is the size of a page, 2MB = 512 * 4096 blocks. */
-		status = EPT_splitLargePage(&lpData->eptConfig, physPTE);
-
-		/* Check to see if the split was successful, or has already been split. */
-		if ((NT_SUCCESS(status)) || (STATUS_ALREADY_COMPLETE == status))
+		/* Get the physical address of the PTE that relates to the targetVA. */
+		PT_LEVEL ptLevel;
+		PHYSICAL_ADDRESS physTargetPTE = MemManage_getPTEAddrForGuest(&lpData->mmContext, tableBase, targetVA, &ptLevel);
+		if (0 != physTargetPTE.QuadPart)
 		{
-			/* Store the aligned physical address that relates to the target, this
-				* will be used so that we can update the shadow entry's translation
-				* at a later point. */
-			configMonPTE->shadowPage = shadowPage;
+			/* As we have set up PDT to 2MB large pages we need to split this for performance.
+			* The lowest we can split it to is the size of a page, 2MB = 512 * 4096 blocks. */
+			NTSTATUS status = EPT_splitLargePage(&lpData->eptConfig, physTargetPTE);
 
-			/* Store a pointer to the PML1E we will be modifying. */
-			configMonPTE->targetPML1E = EPT_getPML1EFromAddress(&lpData->eptConfig, physPTE);
-			if (NULL != configMonPTE->targetPML1E)
+			if ((NT_SUCCESS(status)) || (STATUS_ALREADY_COMPLETE == status))
 			{
-				/* Store the information on the PTE we have read. */
-				configMonPTE->physTargetPTE = physPTE;
-				configMonPTE->lastEntryLevel = ptLevel;
+				/* Now modify the EPT so that we will trap on a write access to this memory. */
+				monitoredPTE->targetPML1E = EPT_getPML1EFromAddress(&lpData->eptConfig, physTargetPTE);
+				if (NULL != monitoredPTE->targetPML1E)
+				{
+					/* Store all the relevant information relating to the monitored PT in the config. */
+					monitoredPTE->targetCR3 = tableBase;
+					monitoredPTE->targetVA = targetVA;
+					monitoredPTE->shadowPage = shadowPage;
+					monitoredPTE->physPTE = physTargetPTE;
 
-				/* Set the PML1E so that it is not writable, this will cause a VMEXIT
-				* if an attempt to write to the guest PTE takes place (paging change of phys address). */
-				configMonPTE->targetPML1E->WriteAccess = 0;
+					monitoredPTE->targetPML1E->WriteAccess = 0;
 
-				/* Add this config to the list of monitored page table entries. */
-				InsertHeadList(&lpData->eptConfig.monitoredPTEList, &configMonPTE->listEntry);
+					/* Add the config to the list of monitored PTEs. */
+					InsertHeadList(&lpData->eptConfig.monitoredPTEList, &monitoredPTE->listEntry);
 
-				status = STATUS_SUCCESS;
-			}
-			else
-			{
-				/* Unable to get PML1E so free resources we have allocated. */
-				ExFreePool(configMonPTE);
-				status = STATUS_NO_SUCH_MEMBER;
+					result = monitoredPTE;
+				}
 			}
 		}
 	}
-	else
+
+	/* Do cleanup if we failed for some reason. */
+	if (NULL == result)
 	{
-		status = STATUS_NO_MEMORY;
+		if (NULL != monitoredPTE)
+		{
+			ExFreePool(monitoredPTE);
+		}
 	}
 
-	return status;
+	return result;
+}
+
+static void removeMonitoredPTE(PEPT_MONITORED_PTE monitoredPTE)
+{
+	/* Ensure the EPT PML1E has read/write access again. */
+	monitoredPTE->targetPML1E->WriteAccess = TRUE;
+
+	/* Remove it from the list. */
+	RemoveEntryList(&monitoredPTE->listEntry);
+
+	/* Free the memory associated with this entry. */
+	ExFreePool(monitoredPTE);
+}
+
+static PEPT_MONITORED_PTE findMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA)
+{
+	PEPT_MONITORED_PTE result = NULL;
+
+	/* Linked lists are initialised as a circular buffer, therefor the last one points back to the beginning,
+	* We can use this to determine when we have gone through all items, or if no items are present. */
+
+	/* Keep going through the whole linked list, until the flink points back to the root. */
+	for (PLIST_ENTRY currentEntry = eptConfig->monitoredPTEList.Flink;
+		currentEntry != &eptConfig->monitoredPTEList;
+		currentEntry = currentEntry->Flink)
+	{
+		/* The CONTAINING_RECORD macro can uses the address of the linked list and then subtracts where the
+		* list entry is stored in the structure from the address to give us the address of the parent. */
+		PEPT_MONITORED_PTE monitoredPTE = CONTAINING_RECORD(currentEntry, EPT_MONITORED_PTE, listEntry);
+
+		/* If the page hook's base address matches where the current guest state is we can assume that
+		* the violation was caused by this hook. Therefor we switch pages appropriately. */
+		if (PAGE_ALIGN(monitoredPTE->physPTE.QuadPart) == PAGE_ALIGN(guestPA.QuadPart))
+		{
+			result = monitoredPTE;
+			break;
+		}
+	}
+
+	return result;
+}
+
+static void updateShadowPagePA(PEPT_CONFIG eptConfig, PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* newPTE, PT_LEVEL level)
+{
+	/* If it has been paged back in, then we update the entry.
+	* if it hasn't then we do nothing. */
+	if (TRUE == newPTE->Present)
+	{
+		/* Calculate the new physical address as where our shadow should be. */
+		PHYSICAL_ADDRESS physNewTarget = calcPhysicalAddressFromPFN(newPTE->PageFrameNumber, level);
+
+		if ((LONGLONG)PAGE_ALIGN(physNewTarget.QuadPart) != monitoredPte->shadowPage->physicalAlign.QuadPart)
+		{
+			DEBUG_PRINT("Old Physical Addr: 0x%I64X\tNew Physical Address: 0x%I64X\r\n", monitoredPte->shadowPage->physicalAlign.QuadPart, physNewTarget.QuadPart);
+			if (FALSE == KD_DEBUGGER_NOT_PRESENT)
+			{
+				DbgBreakPoint();
+			}
+
+			/* As we have set up PDT to 2MB large pages we need to split this for performance.
+			* The lowest we can split it to is the size of a page, 2MB = 512 * 4096 blocks. */
+			NTSTATUS status = EPT_splitLargePage(eptConfig, physNewTarget);
+
+			/* If the page split was successful or was already split, continue. */
+			if (NT_SUCCESS(status) || (STATUS_ALREADY_COMPLETE == status))
+			{
+				/* Update the aligned physical address. */
+				monitoredPte->shadowPage->physicalAlign.QuadPart = (LONGLONG)PAGE_ALIGN(physNewTarget.QuadPart);
+
+				/* Gather the new PML1E address. */
+				monitoredPte->shadowPage->targetPML1E = EPT_getPML1EFromAddress(eptConfig, physNewTarget);
+
+				if (NULL != monitoredPte->shadowPage->targetPML1E)
+				{
+					/* Calculate the page number of the physical memory. */
+					SIZE_T newPageNumber = physNewTarget.QuadPart / PAGE_SIZE;
+
+					/* Update the PFN's and PA in the entry,
+					* We DO NOT modify the executeTarget entry as this should point
+					* to the physical address of our executeOnly target buffer. */
+					monitoredPte->shadowPage->originalPML1E.PageFrameNumber = newPageNumber;
+					monitoredPte->shadowPage->activeExecNotTargetPML1E.PageFrameNumber = newPageNumber;
+					monitoredPte->shadowPage->activeRWPML1E.PageFrameNumber = newPageNumber;
+
+					/* Re-enable the hook. */
+					monitoredPte->shadowPage->targetPML1E->Flags = monitoredPte->shadowPage->activeRWPML1E.Flags;
+				}
+			}
+		}
+	}
 }
 
 static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage, PEPT_SHADOW_PAGE* shadowPage)
@@ -461,106 +563,36 @@ static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS 
 	return status;
 }
 
-static void updateShadowPagePA(PEPT_CONFIG eptConfig, PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* newPTE)
+static PHYSICAL_ADDRESS calcPhysicalAddressFromPFN(UINT64 pageFrameNumber, PT_LEVEL level)
 {
-	/* If it has been paged back in, then we update the entry.
-	 * if it hasn't then we do nothing. */
-	if (TRUE == newPTE->Present)
+	PHYSICAL_ADDRESS result;
+
+	switch (level)
 	{
-		/* Calculate the new physical address as where our shadow should be. */
-		PHYSICAL_ADDRESS physNewTarget;
-		switch (monitoredPte->lastEntryLevel)
+		case PT_LEVEL_PDPTE:
 		{
-			case PT_LEVEL_PDPTE:
-			{
-				physNewTarget.QuadPart = newPTE->PageFrameNumber * SIZE_1GB;
-				break;
-			}
-
-			case PT_LEVEL_PDE:
-			{
-				physNewTarget.QuadPart = newPTE->PageFrameNumber * SIZE_2MB;
-				break;
-			}
-
-			case PT_LEVEL_PTE:
-			{
-				physNewTarget.QuadPart = newPTE->PageFrameNumber * PAGE_SIZE;
-				break;
-			}
-
-			case PT_LEVEL_PML4E:
-			default:
-			{
-				/* Not possible to be this. */
-				physNewTarget.QuadPart = 0;
-				DbgBreakPoint();
-				break;
-			}
+			result.QuadPart = pageFrameNumber * SIZE_1GB;
+			break;
 		}
 
-		if ((LONGLONG)PAGE_ALIGN(physNewTarget.QuadPart) != monitoredPte->shadowPage->physicalAlign.QuadPart)
+		case PT_LEVEL_PDE:
 		{
-			DEBUG_PRINT("Old Physical Addr: 0x%I64X\tNew Physical Address: 0x%I64X\r\n", monitoredPte->shadowPage->physicalAlign.QuadPart, physNewTarget.QuadPart);
-			if (FALSE == KD_DEBUGGER_NOT_PRESENT)
-			{
-				DbgBreakPoint();
-			}
+			result.QuadPart = pageFrameNumber * SIZE_2MB;
+			break;
 		}
 
-		/* As we have set up PDT to 2MB large pages we need to split this for performance.
-		* The lowest we can split it to is the size of a page, 2MB = 512 * 4096 blocks. */
-		NTSTATUS status = EPT_splitLargePage(eptConfig, physNewTarget);
-
-		/* If the page split was successful or was already split, continue. */
-		if (NT_SUCCESS(status) || (STATUS_ALREADY_COMPLETE == status))
+		case PT_LEVEL_PTE:
 		{
-			/* Update the aligned physical address. */
-			monitoredPte->shadowPage->physicalAlign.QuadPart = (LONGLONG)PAGE_ALIGN(physNewTarget.QuadPart);
-
-			/* Gather the new PML1E address. */
-			monitoredPte->shadowPage->targetPML1E = EPT_getPML1EFromAddress(eptConfig, physNewTarget);
-
-			if (NULL != monitoredPte->shadowPage->targetPML1E)
-			{
-				/* Calculate the page number of the physical memory. */
-				SIZE_T newPageNumber = physNewTarget.QuadPart / PAGE_SIZE;
-
-				/* Update the PFN's and PA in the entry,
-				* We DO NOT modify the executeTarget entry as this should point
-				* to the physical address of our executeOnly target buffer. */
-				monitoredPte->shadowPage->originalPML1E.PageFrameNumber = newPageNumber;
-				monitoredPte->shadowPage->activeExecNotTargetPML1E.PageFrameNumber = newPageNumber;
-				monitoredPte->shadowPage->activeRWPML1E.PageFrameNumber = newPageNumber;
-
-				/* Re-enable the hook. */
-				monitoredPte->shadowPage->targetPML1E->Flags = monitoredPte->shadowPage->activeRWPML1E.Flags;
-			}
+			result.QuadPart = pageFrameNumber * PAGE_SIZE;
+			break;
 		}
-	}
-}
 
-static PEPT_MONITORED_PTE findMonitoredPTE(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA)
-{
-	PEPT_MONITORED_PTE result = NULL;
-
-	/* Linked lists are initialised as a circular buffer, therefor the last one points back to the beginning,
-	* We can use this to determine when we have gone through all items, or if no items are present. */
-
-	/* Keep going through the whole linked list, until the flink points back to the root. */
-	for (PLIST_ENTRY currentEntry = eptConfig->monitoredPTEList.Flink;
-		currentEntry != &eptConfig->monitoredPTEList;
-		currentEntry = currentEntry->Flink)
-	{
-		/* The CONTAINING_RECORD macro can uses the address of the linked list and then subtracts where the
-		* list entry is stored in the structure from the address to give us the address of the parent. */
-		PEPT_MONITORED_PTE monitoredPTE = CONTAINING_RECORD(currentEntry, EPT_MONITORED_PTE, listEntry);
-
-		/* If the page hook's base address matches where the current guest state is we can assume that
-		* the violation was caused by this hook. Therefor we switch pages appropriately. */
-		if (PAGE_ALIGN(monitoredPTE->physTargetPTE.QuadPart) == PAGE_ALIGN(guestPA.QuadPart))
+		case PT_LEVEL_PML4E:
+		default:
 		{
-			result = monitoredPTE;
+			/* Not possible to be this. */
+			result.QuadPart = 0;
+			DbgBreakPoint();
 			break;
 		}
 	}

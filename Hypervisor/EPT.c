@@ -117,6 +117,8 @@ NTSTATUS EPT_splitLargePage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddr
 				tempPML1.WriteAccess = 1;
 				tempPML1.ExecuteAccess = 1;
 				tempPML1.MemoryType = targetPML2E->MemoryType;
+				tempPML1.IgnorePat = targetPML2E->IgnorePat;
+				tempPML1.SuppressVe = targetPML2E->SuppressVe;
 
 				/* Copy the template into all of the PML1 entries. */
 				__stosq((PULONG64)&newSplit->PML1[0], tempPML1.Flags, EPT_PML1E_COUNT);

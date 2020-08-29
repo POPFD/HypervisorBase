@@ -181,7 +181,6 @@
     <ClInclude Include="MemManage.h" />
     <ClInclude Include="MSR.h" />
     <ClInclude Include="MTRR.h" />
-    <ClInclude Include="Paging.h" />
     <ClInclude Include="Process.h" />
     <ClInclude Include="VMCALL.h" />
     <ClInclude Include="VMHook.h" />

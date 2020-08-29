@@ -81,9 +81,6 @@
     <ClInclude Include="MTRR.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Paging.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Process.h">
       <Filter>Header Files</Filter>
     </ClInclude>

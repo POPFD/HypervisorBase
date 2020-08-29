@@ -164,14 +164,6 @@ static void handleExitReason(PVMM_DATA lpData)
 			break;
 		}
 
-		case VMX_EXIT_REASON_MONITOR_TRAP_FLAG:
-		{
-			/* If we have handled the MTF successfully, move to the next instruction. */
-			VMShadow_handleMTF(lpData);
-			moveToNextInstruction = FALSE;
-			break;
-		}
-
 		case VMX_EXIT_REASON_EXECUTE_INVD:
 		{
 			__wbinvd();

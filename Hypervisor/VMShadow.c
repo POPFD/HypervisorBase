@@ -454,6 +454,11 @@ static void updateShadowPagePA(PEPT_CONFIG eptConfig, PEPT_MONITORED_PTE monitor
 			}
 		}
 	}
+	else
+	{
+		/* Disable the hook if no longer present. */
+		monitoredPte->shadowPage->targetPML1E->Flags = monitoredPte->shadowPage->originalPML1E.Flags;
+	}
 }
 
 static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage, PEPT_SHADOW_PAGE* shadowPage)
@@ -620,7 +625,11 @@ static void setAllShadowsToReadWrite(PEPT_CONFIG eptConfig)
 		* list entry is stored in the structure from the address to give us the address of the parent. */
 		PEPT_SHADOW_PAGE pageHook = CONTAINING_RECORD(currentEntry, EPT_SHADOW_PAGE, listEntry);
 
-		pageHook->targetPML1E->Flags = pageHook->activeRWPML1E.Flags;
+		/* Only set hooks that aren't currently disabled. */
+		if (pageHook->targetPML1E->Flags != pageHook->originalPML1E.Flags)
+		{
+			pageHook->targetPML1E->Flags = pageHook->activeRWPML1E.Flags;
+		}
 	}
 }
 

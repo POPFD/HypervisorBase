@@ -229,9 +229,6 @@ static void handlePotentialPTEWrite(PVMM_DATA lpData)
 
 				/* We need to update the VM Shadow related to this. */
 				updateShadowPagePA(currentConfig, &readPTE);
-
-				/* Re-enable the hook. */
-				currentConfig->shadowPage->targetPML1E->Flags = currentConfig->shadowPage->activeRWPML1E.Flags;
 			}
 		}
 
@@ -265,11 +262,6 @@ static BOOLEAN handleInitialPTEWrite(PEPT_CONFIG eptConfig)
 	PEPT_MONITORED_PTE foundMonitored = findMonitoredPTE(eptConfig, guestPA);
 	if (NULL != foundMonitored)
 	{
-		//if (FALSE == KD_DEBUGGER_NOT_PRESENT)
-		//{
-		//	DbgBreakPoint();
-		//}
-
 		/* Enable MTF tracing so that we can trace to the instruction after it has been written. */
 		SIZE_T procCtls;
 		__vmx_vmread(VMCS_CTRL_PROCESSOR_BASED_VM_EXECUTION_CONTROLS, &procCtls);
@@ -486,10 +478,14 @@ static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS 
 
 static void updateShadowPagePA(PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* newPTE)
 {
-	/* Calculate the new physical address as where our shadow should be. */
-	PHYSICAL_ADDRESS physNewTarget;
-	switch (monitoredPte->lastEntryLevel)
+	/* If it has been paged back in, then we update the entry.
+	 * if it hasn't then we do nothing. */
+	if (TRUE == newPTE->Present)
 	{
+		/* Calculate the new physical address as where our shadow should be. */
+		PHYSICAL_ADDRESS physNewTarget;
+		switch (monitoredPte->lastEntryLevel)
+		{
 		case PT_LEVEL_PDPTE:
 		{
 			physNewTarget.QuadPart = newPTE->PageFrameNumber * SIZE_1GB;
@@ -516,17 +512,21 @@ static void updateShadowPagePA(PEPT_MONITORED_PTE monitoredPte, PT_ENTRY_64* new
 			DbgBreakPoint();
 			break;
 		}
+		}
+
+		SIZE_T newPageNumber = physNewTarget.QuadPart / PAGE_SIZE;
+
+		/* Update the PFN's and PA in the entry,
+		 * We DO NOT modify the executeTarget entry as this should point
+		 * to the physical address of our executeOnly target buffer. */
+		monitoredPte->shadowPage->physicalAlign = physNewTarget;
+		monitoredPte->shadowPage->originalPML1E.PageFrameNumber = newPageNumber;
+		monitoredPte->shadowPage->activeExecNotTargetPML1E.PageFrameNumber = newPageNumber;
+		monitoredPte->shadowPage->activeRWPML1E.PageFrameNumber = newPageNumber;
+
+		/* Re-enable the hook. */
+		monitoredPte->shadowPage->targetPML1E->Flags = monitoredPte->shadowPage->activeRWPML1E.Flags;
 	}
-
-	SIZE_T newPageNumber = physNewTarget.QuadPart / PAGE_SIZE;
-
-	/* Update the PFN's and PA in the entry,
-	 * We DO NOT modify the executeTarget entry as this should point
-	 * to the physical address of our executeOnly target buffer. */
-	monitoredPte->shadowPage->physicalAlign = physNewTarget;
-	monitoredPte->shadowPage->originalPML1E.PageFrameNumber = newPageNumber;
-	monitoredPte->shadowPage->activeExecNotTargetPML1E.PageFrameNumber = newPageNumber;
-	monitoredPte->shadowPage->activeRWPML1E.PageFrameNumber = newPageNumber;
 
 	/* Store the page frame number so we can monitor for paging at a later point. */
 	monitoredPte->lastPTEValue.Flags = newPTE->Flags;

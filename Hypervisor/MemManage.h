@@ -27,6 +27,8 @@ typedef enum
 
 /******************** Public Prototypes ********************/
 NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3);
+void MemManage_uninit(PMM_CONTEXT context);
+NTSTATUS MemManage_changeMemoryProt(PMM_CONTEXT context, CR3 tableBase, PUINT8 baseAddress, SIZE_T size, BOOLEAN writable, BOOLEAN executable);
 NTSTATUS MemManage_readVirtualAddress(PMM_CONTEXT context, CR3 tableBase, PVOID guestVA, PVOID buffer, SIZE_T size);
 NTSTATUS MemManage_writeVirtualAddress(PMM_CONTEXT context, CR3 tableBase, PVOID guestVA, CONST PVOID buffer, SIZE_T size);
 NTSTATUS MemManage_readPhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS physicalAddress, VOID* buffer, SIZE_T bytesToCopy);

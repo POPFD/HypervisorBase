@@ -101,6 +101,48 @@ NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3)
 	return status;
 }
 
+void MemManage_uninit(PMM_CONTEXT context)
+{
+	MmFreeMappingAddress(context->reservedPage, POOL_TAG);
+}
+
+NTSTATUS MemManage_changeMemoryProt(PMM_CONTEXT context, CR3 tableBase, PUINT8 baseAddress, SIZE_T size, BOOLEAN writable, BOOLEAN executable)
+{
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
+
+	PUINT8 startVA = PAGE_ALIGN(baseAddress);
+	PUINT8 endVA = baseAddress + size;
+
+	for (PUINT8 currentVA = startVA; currentVA < endVA; currentVA += PAGE_SIZE)
+	{
+		/* Get the physical address of the page table entry. */
+		PT_LEVEL tableLevel;
+		PHYSICAL_ADDRESS physPTE = MemManage_getPTEAddrForGuest(context, tableBase, currentVA, &tableLevel);
+		if (0 != physPTE.QuadPart)
+		{
+			/* Read the original page table entry. */
+			PT_ENTRY_64 readPTE;
+			status = MemManage_readPhysicalAddress(context, physPTE, &readPTE, sizeof(readPTE));
+			if (NT_SUCCESS(status))
+			{
+				/* Modify the page table entry with new flags. */
+				readPTE.Write = writable;
+				readPTE.ExecuteDisable = (FALSE == executable);
+
+				/* Write the page table entry. */
+				status = MemManage_writePhysicalAddress(context, physPTE, &readPTE, sizeof(readPTE));
+				if (NT_ERROR(status))
+				{
+					/* Error detected so break from the loop. */
+					break;
+				}
+			}
+		}
+	}
+
+	return status;
+}
+
 NTSTATUS MemManage_readVirtualAddress(PMM_CONTEXT context, CR3 tableBase, PVOID guestVA, PVOID buffer, SIZE_T size)
 {
 	/* Get the physical address of the guest memory. */

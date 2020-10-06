@@ -23,6 +23,9 @@ void EPT_initialise(PEPT_CONFIG eptConfig, const PMTRR_RANGE mtrrTable)
 {
 	DEBUG_PRINT("Initialising the EPT for the virtual machine.\r\n");
 
+	/* Initialise the linked list used for holding violation handlers. */
+	InitializeListHead(&eptConfig->handlerList);
+
 	/* Initialise the linked list used for holding split pages. */
 	InitializeListHead(&eptConfig->dynamicSplitList);
 
@@ -87,6 +90,67 @@ void EPT_initialise(PEPT_CONFIG eptConfig, const PMTRR_RANGE mtrrTable)
 			eptConfig->PML2[i][j].MemoryType = adjustedType;
 		}
 	}
+}
+
+BOOLEAN EPT_handleViolation(PEPT_CONFIG eptConfig)
+{
+	/* Result indicates handled successfully. */
+	BOOLEAN result = FALSE;
+
+	/* Get the physical address of the page that caused the violation. */
+	PHYSICAL_ADDRESS guestPA;
+	__vmx_vmread(VMCS_GUEST_PHYSICAL_ADDRESS, (SIZE_T*)&guestPA.QuadPart);
+
+	/* Search the list of EPT handlers and determine which one to call. */
+	for (PLIST_ENTRY currentEntry = eptConfig->handlerList.Flink;
+		currentEntry != &eptConfig->handlerList;
+		currentEntry = currentEntry->Flink)
+	{
+		/* Use the CONTAINING_RECORD macro to get the actual record 
+		 * the linked list is holding. */
+		PEPT_HANDLER eptHandler = CONTAINING_RECORD(currentEntry, EPT_HANDLER, listEntry);
+
+		/* Check to see if the physical address associated with the handler matches,
+		 * if so we call that handler. */
+		if (PAGE_ALIGN(guestPA.QuadPart) == PAGE_ALIGN(eptHandler->physicalAlign.QuadPart))
+		{
+			result = eptHandler->callback(eptConfig, eptHandler->userParameter);
+			break;
+		}
+	}
+
+	return result;
+}
+
+NTSTATUS EPT_addViolationHandler(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA, fnEPTHandlerCallback callback, PVOID userParameter)
+{
+	NTSTATUS status;
+
+	if (NULL != callback)
+	{
+		/* Allocate a new handler structure that will be used for traversal later. */
+		PEPT_HANDLER newHandler = (PEPT_HANDLER)ExAllocatePool(NonPagedPoolNx, sizeof(PEPT_HANDLER));
+		if (NULL != newHandler)
+		{
+			newHandler->physicalAlign.QuadPart = (LONGLONG)PAGE_ALIGN(guestPA.QuadPart);
+			newHandler->callback = callback;
+			newHandler->userParameter = userParameter;
+
+			/* Add this structure to the linked list of already existing handlers. */
+			InsertHeadList(&eptConfig->handlerList, &newHandler->listEntry);
+			status = STATUS_SUCCESS;
+		}
+		else
+		{
+			status = STATUS_NO_MEMORY;
+		}
+	}
+	else
+	{
+		status = STATUS_INVALID_PARAMETER;
+	}
+
+	return status;
 }
 
 NTSTATUS EPT_splitLargePage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress)

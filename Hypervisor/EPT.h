@@ -88,8 +88,12 @@ typedef struct _EPT_CONFIG
 	* the map so that we do not need to allocate individual 4096 PML1 paging structures. */
 	DECLSPEC_ALIGN(PAGE_SIZE) EPT_PML2_ENTRY PML2[EPT_PML3E_COUNT][EPT_PML2E_COUNT];
 
+	/* List all of the EPT handlers that are used. */
+	LIST_ENTRY handlerList;
+
 	/* List of all dynamically split pages (from 2MB to 4KB). This will be used for
-	* when they need to be freed during uninitialisation. */
+	 * when they need to be freed during uninitialisation. 
+	 * TODO: Actually implement uninit. */
 	LIST_ENTRY dynamicSplitList;
 
 	/* List of all the PAGE shadows in the system. */
@@ -99,6 +103,26 @@ typedef struct _EPT_CONFIG
 	EPT_POINTER eptPointer;
 } EPT_CONFIG, *PEPT_CONFIG;
 
+/* Callback function for the EPT violation handler. */
+typedef BOOLEAN(*fnEPTHandlerCallback)(PEPT_CONFIG eptConfig, PVOID userBuffer);
+
+/* Structure that holds the information of each handler that
+* are used for parsing violations. */
+typedef struct _EPT_HANDLER
+{
+	/* Base address of the page that will cause the violation. */
+	PHYSICAL_ADDRESS physicalAlign;
+
+	/* Callback of the handler, that will be called for processing the violation. */
+	fnEPTHandlerCallback callback;
+
+	/* Buffer that can be used for user-supplied configs. */
+	PVOID userParameter;
+
+	/* Linked list entry, used for traversal. */
+	LIST_ENTRY listEntry;
+} EPT_HANDLER, *PEPT_HANDLER;
+
 /******************** Public Constants ********************/
 
 /******************** Public Variables ********************/
@@ -106,6 +130,8 @@ typedef struct _EPT_CONFIG
 /******************** Public Prototypes ********************/
 
 void EPT_initialise(PEPT_CONFIG eptTable, const PMTRR_RANGE mtrrTable);
+BOOLEAN EPT_handleViolation(PEPT_CONFIG eptConfig);
+NTSTATUS EPT_addViolationHandler(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA, fnEPTHandlerCallback callback, PVOID userParameter);
 NTSTATUS EPT_splitLargePage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);
 PEPT_PML2_ENTRY EPT_getPML2EFromAddress(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);
 PEPT_PML1_ENTRY EPT_getPML1EFromAddress(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);

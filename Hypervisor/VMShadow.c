@@ -10,6 +10,28 @@
 
 /******************** Module Typedefs ********************/
 
+/* Structure that will hold the shadow configuration for hiding executable pages. */
+typedef struct _SHADOW_PAGE
+{
+	DECLSPEC_ALIGN(PAGE_SIZE) UINT8 executePage[PAGE_SIZE];
+
+	/* Target process that will be hooked, NULL if global. */
+	CR3 targetCR3;
+
+	/* Pointer to the PML1 entry that will be modified between RW and E. */
+	PEPT_PML1_ENTRY targetPML1E;
+
+	/* Will store the flags of the specific PML1E's that will be
+	 * used for targetting shadowing. */
+	EPT_PML1_ENTRY originalPML1E;
+	EPT_PML1_ENTRY activeExecTargetPML1E;
+	EPT_PML1_ENTRY activeExecNotTargetPML1E;
+	EPT_PML1_ENTRY activeRWPML1E;
+
+	/* List entry for the page hook, this will be used to keep track of
+	* all shadow pages. */
+	LIST_ENTRY listEntry;
+} SHADOW_PAGE, *PSHADOW_PAGE;
 
 /******************** Module Constants ********************/
 
@@ -18,38 +40,12 @@
 
 
 /******************** Module Prototypes ********************/
-static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, VMX_EXIT_QUALIFICATION_EPT_VIOLATION qualification);
-static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage, PEPT_SHADOW_PAGE* shadowPage);
-static PEPT_SHADOW_PAGE findShadowPage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA);
+static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, PVOID userBuffer);
+static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage);
 static void setAllShadowsToReadWrite(PEPT_CONFIG eptConfig);
 static void invalidateEPT(PEPT_CONFIG eptConfig);
 
 /******************** Public Code ********************/
-
-BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig)
-{
-	/* Set to false as we haven't successfully handled the violation yet. */
-	BOOLEAN result = FALSE;
-
-	/* Cast the exit qualification to it's proper type, as an EPT violation. */
-	VMX_EXIT_QUALIFICATION_EPT_VIOLATION violationQualification;
-	__vmx_vmread(VMCS_EXIT_QUALIFICATION, &violationQualification.Flags);
-
-	/* We should only deal with shadow pages caused by translation. */
-	if (TRUE == violationQualification.CausedByTranslation)
-	{
-		/* Check to see if the EPT violation was due to a monitored PTE. */
-		result = handleShadowExec(eptConfig, violationQualification);
-
-		/* If we didn't handle it, throw an error. */
-		if (FALSE == result)
-		{
-			DbgBreakPoint();
-		}
-	}
-
-	return result;
-}
 
 BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData)
 {
@@ -108,8 +104,7 @@ NTSTATUS VMShadow_hidePageGlobally(
 	NTSTATUS status = STATUS_INVALID_PARAMETER;
 
 	CR3 nullCR3 = { .Flags = 0 };
-	PEPT_SHADOW_PAGE shadowPage;
-	status = hidePage(eptConfig, nullCR3, targetPA, payloadPage, &shadowPage);
+	status = hidePage(eptConfig, nullCR3, targetPA, payloadPage);
 
 	if (NT_SUCCESS(status) && (TRUE == hypervisorRunning))
 	{
@@ -141,8 +136,7 @@ NTSTATUS VMShadow_hideExecInProcess(
 		if (NT_SUCCESS(status))
 		{
 			/* Hide the executable page, for that page only. */
-			PEPT_SHADOW_PAGE shadowPage;
-			status = hidePage(&lpData->eptConfig, tableBase, physTargetVA, execVA, &shadowPage);
+			status = hidePage(&lpData->eptConfig, tableBase, physTargetVA, execVA);
 			if (NT_SUCCESS(status))
 			{			
 				/* As we are attempting to hide exec memory in a process,
@@ -164,60 +158,65 @@ NTSTATUS VMShadow_hideExecInProcess(
 
 /******************** Module Code ********************/
 
-static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, VMX_EXIT_QUALIFICATION_EPT_VIOLATION qualification)
+static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, PVOID userBuffer)
 {
+	UNREFERENCED_PARAMETER(eptConfig);
 	BOOLEAN result = FALSE;
 
-	/* Get the guest physical address that caused the violation. */
-	PHYSICAL_ADDRESS guestPA;
-	__vmx_vmread(VMCS_GUEST_PHYSICAL_ADDRESS, (SIZE_T*)&guestPA.QuadPart);
+	/* Cast the exit qualification to it's proper type, as an EPT violation. */
+	VMX_EXIT_QUALIFICATION_EPT_VIOLATION violationQual;
+	__vmx_vmread(VMCS_EXIT_QUALIFICATION, &violationQual.Flags);
 
-	/* Find the shadow page that caused the violation. */
-	PEPT_SHADOW_PAGE foundShadow = findShadowPage(eptConfig, guestPA);
-	if (NULL != foundShadow)
+	/* We should only deal with shadow pages caused by translation. */
+	if (TRUE == violationQual.CausedByTranslation)
 	{
-		/* Check to see if the violation was from trying to execute a non-executable page. */
-		if ((FALSE == qualification.EptExecutable) && (TRUE == qualification.ExecuteAccess))
+		/* The user supplied parameter when the handler was registered supplies
+		 * the shadow page config, so we re-cast it to the desired type. */
+		PSHADOW_PAGE shadowPage = (PSHADOW_PAGE)userBuffer;
+		if (NULL != shadowPage)
 		{
-			/* Check to see if target process matches. */
-			CR3 guestCR3;
-			__vmx_vmread(VMCS_GUEST_CR3, &guestCR3.Flags);
-
-			if ((0 == foundShadow->targetCR3.Flags) || (guestCR3.AddressOfPageDirectory == foundShadow->targetCR3.AddressOfPageDirectory))
+			/* Check to see if the violation was from trying to execute a non-executable page. */
+			if ((FALSE == violationQual.EptExecutable) && (TRUE == violationQual.ExecuteAccess))
 			{
-				/* Switch to the target execute page, this is if there it is a global shadow (no target CR3)
-				* or the CR3 matches the target. */
-				foundShadow->targetPML1E->Flags = foundShadow->activeExecTargetPML1E.Flags;
+				/* Check to see if target process matches. */
+				CR3 guestCR3;
+				__vmx_vmread(VMCS_GUEST_CR3, &guestCR3.Flags);
+
+				if ((0 == shadowPage->targetCR3.Flags) || (guestCR3.AddressOfPageDirectory == shadowPage->targetCR3.AddressOfPageDirectory))
+				{
+					/* Switch to the target execute page, this is if there it is a global shadow (no target CR3)
+					* or the CR3 matches the target. */
+					shadowPage->targetPML1E->Flags = shadowPage->activeExecTargetPML1E.Flags;
+				}
+				else
+				{
+					/* Switch to the original execute page, we will use MTF tracing to
+					* know when to put it back to the RW only page. */
+					shadowPage->targetPML1E->Flags = shadowPage->activeExecNotTargetPML1E.Flags;
+				}
+
+				result = TRUE;
 			}
-			else
+			else if ((TRUE == violationQual.EptExecutable) &&
+					 (violationQual.ReadAccess || violationQual.WriteAccess))
 			{
-				/* Switch to the original execute page, we will use MTF tracing to
-				* know when to put it back to the RW only page. */
-				foundShadow->targetPML1E->Flags = foundShadow->activeExecNotTargetPML1E.Flags;
+				/* If so, we update the PML1E so that the read/write page is visible to the guest. */
+				shadowPage->targetPML1E->Flags = shadowPage->activeRWPML1E.Flags;
+				result = TRUE;
 			}
-
-			result = TRUE;
-		}
-		else if ((TRUE == qualification.EptExecutable) &&
-			(qualification.ReadAccess || qualification.WriteAccess))
-		{
-			/* If so, we update the PML1E so that the read/write page is visible to the guest. */
-			foundShadow->targetPML1E->Flags = foundShadow->activeRWPML1E.Flags;
-
-			result = TRUE;
 		}
 	}
 
 	return result;
 }
 
-static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage, PEPT_SHADOW_PAGE* shadowPage)
+static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage)
 {
 	NTSTATUS status;
 
 	if (0ULL != targetPA.QuadPart)
 	{
-		PEPT_SHADOW_PAGE shadowConfig = (PEPT_SHADOW_PAGE)ExAllocatePool(NonPagedPoolNx, sizeof(EPT_SHADOW_PAGE));
+		PSHADOW_PAGE shadowConfig = (PSHADOW_PAGE)ExAllocatePool(NonPagedPoolNx, sizeof(SHADOW_PAGE));
 
 		if (NULL != shadowConfig)
 		{
@@ -229,10 +228,11 @@ static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS 
 			if (NT_SUCCESS(status) || (STATUS_ALREADY_COMPLETE == status))
 			{
 				/* Zero the newly allocated page config. */
-				RtlZeroMemory(shadowConfig, sizeof(EPT_SHADOW_PAGE));
+				RtlZeroMemory(shadowConfig, sizeof(SHADOW_PAGE));
 
 				/* Store the physical address of the targeted page & offset into page. */
-				shadowConfig->physicalAlign.QuadPart = (LONGLONG)PAGE_ALIGN(targetPA.QuadPart);
+				PHYSICAL_ADDRESS physicalAlign;
+				physicalAlign.QuadPart = (LONGLONG)PAGE_ALIGN(targetPA.QuadPart);
 
 				/* Store the target process. */
 				shadowConfig->targetCR3 = targetCR3;
@@ -273,10 +273,7 @@ static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS 
 					RtlCopyMemory(&shadowConfig->executePage[0], executePage, PAGE_SIZE);
 
 					/* Add this shadow hook to the EPT shadow list. */
-					InsertHeadList(&eptConfig->pageShadowList, &shadowConfig->listEntry);
-
-					*shadowPage = shadowConfig;
-					status = STATUS_SUCCESS;
+					status = EPT_addViolationHandler(eptConfig, physicalAlign, handleShadowExec, (PVOID)shadowConfig);
 				}
 				else
 				{
@@ -299,49 +296,27 @@ static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS 
 	return status;
 }
 
-static PEPT_SHADOW_PAGE findShadowPage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA)
-{
-	PEPT_SHADOW_PAGE result = NULL;
-
-	/* Linked lists are initialised as a circular buffer, therefor the last one points back to the beginning,
-	* We can use this to determine when we have gone through all items, or if no items are present. */
-
-	/* Keep going through the whole linked list, until the flink points back to the root. */
-	for (PLIST_ENTRY currentEntry = eptConfig->pageShadowList.Flink;
-		currentEntry != &eptConfig->pageShadowList;
-		currentEntry = currentEntry->Flink)
-	{
-		/* The CONTAINING_RECORD macro can uses the address of the linked list and then subtracts where the
-		* list entry is stored in the structure from the address to give us the address of the parent. */
-		PEPT_SHADOW_PAGE pageHook = CONTAINING_RECORD(currentEntry, EPT_SHADOW_PAGE, listEntry);
-
-		/* If the page hook's base address matches where the current guest state is we can assume that
-		* the violation was caused by this hook. Therefor we switch pages appropriately. */
-		if (PAGE_ALIGN(pageHook->physicalAlign.QuadPart) == PAGE_ALIGN(guestPA.QuadPart))
-		{
-			result = pageHook;
-			break;
-		}
-	}
-
-	return result;
-}
-
 static void setAllShadowsToReadWrite(PEPT_CONFIG eptConfig)
 {
-	/* Keep going through the whole linked list, until the flink points back to the root. */
-	for (PLIST_ENTRY currentEntry = eptConfig->pageShadowList.Flink;
-		currentEntry != &eptConfig->pageShadowList;
+	/* Go through the whole linked list of the EPT handlers for each of the
+	 * user addresses. If the handler matches the one we use for shadow exec, set it to read/write. */
+	for (PLIST_ENTRY currentEntry = eptConfig->handlerList.Flink;
+		currentEntry != &eptConfig->handlerList;
 		currentEntry = currentEntry->Flink)
 	{
-		/* The CONTAINING_RECORD macro can uses the address of the linked list and then subtracts where the
-		* list entry is stored in the structure from the address to give us the address of the parent. */
-		PEPT_SHADOW_PAGE pageHook = CONTAINING_RECORD(currentEntry, EPT_SHADOW_PAGE, listEntry);
+		PEPT_HANDLER eptHandler = CONTAINING_RECORD(currentEntry, EPT_HANDLER, listEntry);
 
-		/* Only set hooks that aren't currently disabled. */
-		if (pageHook->targetPML1E->Flags != pageHook->originalPML1E.Flags)
+		/* TODO: Not a great solution, maybe think of something more elegant,
+		 *		 VMShadow is currently coupled to EPT internal configs (which is shouldn't really have access to). */
+		if (eptHandler->callback == handleShadowExec)
 		{
-			pageHook->targetPML1E->Flags = pageHook->activeRWPML1E.Flags;
+			PSHADOW_PAGE shadowPage = (PSHADOW_PAGE)eptHandler->userParameter;
+
+			/* Only set hooks that are currently enabled. */
+			if (shadowPage->targetPML1E->Flags != shadowPage->originalPML1E.Flags)
+			{
+				shadowPage->targetPML1E->Flags = shadowPage->activeRWPML1E.Flags;
+			}
 		}
 	}
 }

@@ -146,11 +146,15 @@ static void handleExitReason(PVMM_DATA lpData)
 
 		case VMX_EXIT_REASON_EPT_VIOLATION:
 		{
-			if (TRUE == VMShadow_handleEPTViolation(&lpData->eptConfig))
+			if (TRUE == EPT_handleViolation(&lpData->eptConfig))
 			{
-				/* If we have handled the hook properly, we don't want to move to the next instruction,
+				/* If we have handled the violation properly, we don't want to move to the next instruction,
 				* We want to try process the instruction again, now that the page has been switched. */
 				moveToNextInstruction = FALSE;
+			}
+			else
+			{
+				DbgBreakPoint();
 			}
 
 			break;

@@ -36,32 +36,6 @@ typedef EPDE_2MB EPT_PML2_ENTRY, *PEPT_PML2_ENTRY;
 typedef EPDE EPT_PML2_POINTER, *PEPT_PML2_POINTER;
 typedef EPTE EPT_PML1_ENTRY, *PEPT_PML1_ENTRY;
 
-/* Structure that will hold the shadow configuration for hiding executable pages. */
-typedef struct _EPT_SHADOW_PAGE
-{
-	DECLSPEC_ALIGN(PAGE_SIZE) UINT8 executePage[PAGE_SIZE];
-
-	/* Base address of the page that is being shadowed. */
-	PHYSICAL_ADDRESS physicalAlign;
-
-	/* Target process that will be hooked, NULL if global. */
-	CR3 targetCR3;
-
-	/* Pointer to the PML1 entry that will be modified between RW and E. */
-	PEPT_PML1_ENTRY targetPML1E;
-
-	/* Will store the flags of the specific PML1E's that will be
-	 * used for targetting shadowing. */
-	EPT_PML1_ENTRY originalPML1E;
-	EPT_PML1_ENTRY activeExecTargetPML1E;
-	EPT_PML1_ENTRY activeExecNotTargetPML1E;
-	EPT_PML1_ENTRY activeRWPML1E;
-
-	/* List entry for the page hook, this will be used to keep track of
-	* all shadow pages. */
-	LIST_ENTRY listEntry;
-} EPT_SHADOW_PAGE, *PEPT_SHADOW_PAGE;
-
 /* Structure that will hold the PML1 data for a dynamically split PML2 entry. */
 typedef struct _EPT_DYNAMIC_SPLIT
 {
@@ -95,9 +69,6 @@ typedef struct _EPT_CONFIG
 	 * when they need to be freed during uninitialisation. 
 	 * TODO: Actually implement uninit. */
 	LIST_ENTRY dynamicSplitList;
-
-	/* List of all the PAGE shadows in the system. */
-	LIST_ENTRY pageShadowList;
 
 	/* EPT pointer that will be used for the VMCS. */
 	EPT_POINTER eptPointer;

@@ -29,9 +29,6 @@ void EPT_initialise(PEPT_CONFIG eptConfig, const PMTRR_RANGE mtrrTable)
 	/* Initialise the linked list used for holding split pages. */
 	InitializeListHead(&eptConfig->dynamicSplitList);
 
-	/* Initialise the linked list used for holding all the hooks. */
-	InitializeListHead(&eptConfig->pageShadowList);
-
 	/* Create the EPT pointer for the structure. */
 	eptConfig->eptPointer.PageWalkLength = 3;
 	eptConfig->eptPointer.MemoryType = MEMORY_TYPE_WRITE_BACK;
@@ -77,7 +74,7 @@ void EPT_initialise(PEPT_CONFIG eptConfig, const PMTRR_RANGE mtrrTable)
 		/* Construct the EPT identity map for every 2MB of RAM. */
 		for (UINT32 j = 0; j < EPT_PML2E_COUNT; j++)
 		{
-			eptConfig->PML2[i][j].PageFrameNumber = (i * EPT_PML3E_COUNT) + j;
+			eptConfig->PML2[i][j].PageFrameNumber = ((UINT64)i * EPT_PML3E_COUNT) + j;
 
 			/* Calculate the page physical address, by using the page number and multiplying it
 			* by the size of a LARGE_PAGE. */

@@ -12,7 +12,7 @@
 /******************** Public Variables ********************/
 
 /******************** Public Prototypes ********************/
-BOOLEAN VMShadow_handleEPTViolation(PEPT_CONFIG eptConfig);
+
 BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData);
 
 NTSTATUS VMShadow_hidePageGlobally(

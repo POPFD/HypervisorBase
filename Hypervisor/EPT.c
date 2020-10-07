@@ -126,7 +126,7 @@ NTSTATUS EPT_addViolationHandler(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA
 	if (NULL != callback)
 	{
 		/* Allocate a new handler structure that will be used for traversal later. */
-		PEPT_HANDLER newHandler = (PEPT_HANDLER)ExAllocatePool(NonPagedPoolNx, sizeof(PEPT_HANDLER));
+		PEPT_HANDLER newHandler = (PEPT_HANDLER)ExAllocatePool(NonPagedPoolNx, sizeof(EPT_HANDLER));
 		if (NULL != newHandler)
 		{
 			newHandler->physicalAlign.QuadPart = (LONGLONG)PAGE_ALIGN(guestPA.QuadPart);

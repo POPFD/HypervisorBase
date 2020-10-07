@@ -28,9 +28,6 @@ typedef struct _SHADOW_PAGE
 	EPT_PML1_ENTRY activeExecNotTargetPML1E;
 	EPT_PML1_ENTRY activeRWPML1E;
 
-	/* List entry for the page hook, this will be used to keep track of
-	* all shadow pages. */
-	LIST_ENTRY listEntry;
 } SHADOW_PAGE, *PSHADOW_PAGE;
 
 /******************** Module Constants ********************/

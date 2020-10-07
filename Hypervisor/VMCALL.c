@@ -18,12 +18,14 @@ typedef NTSTATUS(*fnActionHandler)(PVMM_DATA lpData, PVOID buffer, SIZE_T buffer
 
 
 /******************** Module Prototypes ********************/
+static NTSTATUS actionRunAsRoot(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize);
 static NTSTATUS actionShadowInProcess(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize);
 
 /******************** Action Handlers ********************/
 
 static const fnActionHandler ACTION_HANDLERS[VMCALL_ACTION_COUNT] =
 {
+	[VMCALL_ACTION_RUN_AS_ROOT] = actionRunAsRoot,
 	[VMCALL_ACTION_SHADOW_IN_PROCESS] = actionShadowInProcess,
 };
 
@@ -68,6 +70,25 @@ BOOLEAN VMCALL_handle(PVMM_DATA lpData)
 }
 
 /******************** Module Code ********************/
+
+static NTSTATUS actionRunAsRoot(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize)
+{
+	NTSTATUS status;
+
+	if ((NULL != buffer) && (sizeof(VM_PARAM_RUN_AS_ROOT) == bufferSize))
+	{
+		PVM_PARAM_RUN_AS_ROOT params = (PVM_PARAM_RUN_AS_ROOT)buffer;
+
+		/* Call the specified function (we will currently be in VMX ROOT. */
+		status = params->callback(lpData, params->parameter);
+	}
+	else
+	{
+		status = STATUS_INVALID_PARAMETER;
+	}
+
+	return status;
+}
 
 static NTSTATUS actionShadowInProcess(PVMM_DATA lpData, PVOID buffer, SIZE_T bufferSize)
 {

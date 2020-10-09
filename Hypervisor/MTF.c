@@ -52,7 +52,7 @@ BOOLEAN MTF_handleTrap(PMTF_CONFIG mtfConfig)
 	BOOLEAN result = FALSE;
 
 	/* Get the value of the guest RIP. */
-	UINT64 guestRIP;
+	SIZE_T guestRIP;
 	__vmx_vmread(VMCS_GUEST_RIP, &guestRIP);
 
 	/* Search the list of MTF handler and determine which one to call. */
@@ -95,6 +95,39 @@ NTSTATUS MTF_addHandler(PMTF_CONFIG mtfConfig, PUINT8 rangeStart, PUINT8 rangeEn
 		else
 		{
 			status = STATUS_NO_MEMORY;
+		}
+	}
+	else
+	{
+		status = STATUS_INVALID_PARAMETER;
+	}
+
+	return status;
+}
+
+NTSTATUS MTF_removeHandler(PMTF_CONFIG mtfConfig, fnMTFHandlerCallback callback)
+{
+	NTSTATUS status;
+
+	if (NULL != mtfConfig)
+	{
+		status = STATUS_UNSUCCESSFUL;
+
+		/* Search the list of MTF handler and determine which one to remove. */
+		for (PLIST_ENTRY currentEntry = mtfConfig->handlerList.Flink;
+			currentEntry != &mtfConfig->handlerList;
+			currentEntry = currentEntry->Flink)
+		{
+			/* Get the handler structure. */
+			PMTF_HANDLER mtfHandler = CONTAINING_RECORD(currentEntry, MTF_HANDLER, listEntry);
+
+			/* Check to see if the guest RIP is within these bounds. */
+			if (callback == mtfHandler->callback)
+			{
+				RemoveEntryList(currentEntry);
+				status = STATUS_SUCCESS;
+				break;
+			}
 		}
 	}
 	else

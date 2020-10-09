@@ -21,4 +21,5 @@ typedef BOOLEAN(*fnMTFHandlerCallback)(PMTF_CONFIG, PVOID userBuffer);
 void MTF_initialise(PMTF_CONFIG mtfConfig);
 BOOLEAN MTF_handleTrap(PMTF_CONFIG mtfConfig);
 NTSTATUS MTF_addHandler(PMTF_CONFIG mtfConfig, PUINT8 rangeStart, PUINT8 rangeEnd, fnMTFHandlerCallback callback, PVOID userParameter);
+NTSTATUS MTF_removeHandler(PMTF_CONFIG mtfConfig, fnMTFHandlerCallback callback);
 void MTF_setTracingEnabled(BOOLEAN enabled);

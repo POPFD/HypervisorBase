@@ -148,8 +148,7 @@ static void handleExitReason(PVMM_DATA lpData)
 		{
 			if (TRUE == MTF_handleTrap(&lpData->mtfConfig))
 			{
-				/* If handled correctly, move to next instruction. */
-				moveToNextInstruction = TRUE;
+				/* Do nothing. */
 			}
 			else
 			{

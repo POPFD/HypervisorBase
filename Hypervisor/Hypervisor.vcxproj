@@ -182,6 +182,10 @@
     <ClInclude Include="Intrinsics.h" />
     <ClInclude Include="MemManage.h" />
     <ClInclude Include="MSR.h" />
+    <ClInclude Include="MTF.h">
+      <SubType>
+      </SubType>
+    </ClInclude>
     <ClInclude Include="MTRR.h" />
     <ClInclude Include="Process.h" />
     <ClInclude Include="VMCALL.h" />
@@ -197,6 +201,10 @@
     <ClCompile Include="Hypervisor.c" />
     <ClCompile Include="MemManage.c" />
     <ClCompile Include="MSR.c" />
+    <ClCompile Include="MTF.c">
+      <SubType>
+      </SubType>
+    </ClCompile>
     <ClCompile Include="MTRR.c" />
     <ClCompile Include="VMCALL.c" />
     <ClCompile Include="VMHook.c" />

@@ -106,3 +106,4 @@ NTSTATUS EPT_addViolationHandler(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA
 NTSTATUS EPT_splitLargePage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);
 PEPT_PML2_ENTRY EPT_getPML2EFromAddress(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);
 PEPT_PML1_ENTRY EPT_getPML1EFromAddress(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);
+void EPT_invalidateAndFlush(PEPT_CONFIG eptConfig);

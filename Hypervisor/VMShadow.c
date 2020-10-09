@@ -40,7 +40,6 @@ typedef struct _SHADOW_PAGE
 static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, PVOID userBuffer);
 static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage);
 static void setAllShadowsToReadWrite(PEPT_CONFIG eptConfig);
-static void invalidateEPT(PEPT_CONFIG eptConfig);
 
 /******************** Public Code ********************/
 
@@ -63,7 +62,7 @@ BOOLEAN VMShadow_handleMovCR(PVMM_DATA lpData)
 			 * set instead of execute. That way if an execute happens on one, the target
 			 * will flip to the right execute entry later depending if it is a targetted process or not. */
 			setAllShadowsToReadWrite(&lpData->eptConfig);
-			invalidateEPT(&lpData->eptConfig);
+			EPT_invalidateAndFlush(&lpData->eptConfig);
 
 			/* Set the guest CR3 register, to the value of the general purpose register. */
 			ULONG64* registerList = &lpData->guestContext.Rax;
@@ -106,7 +105,7 @@ NTSTATUS VMShadow_hidePageGlobally(
 	if (NT_SUCCESS(status) && (TRUE == hypervisorRunning))
 	{
 		/* We have modified EPT layout, therefore flush and reload. */
-		invalidateEPT(eptConfig);
+		EPT_invalidateAndFlush(eptConfig);
 	}
 
 	return status;
@@ -140,7 +139,7 @@ NTSTATUS VMShadow_hideExecInProcess(
 				 * it's safe to say the hypervisor & EPT is already running.
 			     * Therefore we should invalidate the already existing EPT to flush
 				 * in the new config. */
-				invalidateEPT(&lpData->eptConfig);
+				EPT_invalidateAndFlush(&lpData->eptConfig);
 			}
 		}
 	}
@@ -187,8 +186,7 @@ static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, PVOID userBuffer)
 				}
 				else
 				{
-					/* Switch to the original execute page, we will use MTF tracing to
-					* know when to put it back to the RW only page. */
+					/* Switch to the original execute page */
 					shadowPage->targetPML1E->Flags = shadowPage->activeExecNotTargetPML1E.Flags;
 				}
 
@@ -316,13 +314,4 @@ static void setAllShadowsToReadWrite(PEPT_CONFIG eptConfig)
 			}
 		}
 	}
-}
-
-static void invalidateEPT(PEPT_CONFIG eptConfig)
-{
-	INVEPT_DESCRIPTOR eptDescriptor;
-
-	eptDescriptor.EptPointer = eptConfig->eptPointer.Flags;
-	eptDescriptor.Reserved = 0;
-	__invept(InveptSingleContext, &eptDescriptor);
 }

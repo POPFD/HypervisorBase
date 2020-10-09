@@ -2,6 +2,7 @@
 #include "ia32.h"
 #include "MTRR.h"
 #include "EPT.h"
+#include "MTF.h"
 #include "MemManage.h"
 
 /******************** Public Typedefs ********************/
@@ -35,6 +36,7 @@ typedef struct _VMM_DATA
 	DECLSPEC_ALIGN(PAGE_SIZE) UINT8 hypervisorStack[KERNEL_STACK_SIZE];
 
 	DECLSPEC_ALIGN(PAGE_SIZE) EPT_CONFIG eptConfig;
+	DECLSPEC_ALIGN(PAGE_SIZE) MTF_CONFIG mtfConfig;
 	DECLSPEC_ALIGN(PAGE_SIZE) UINT8 msrBitmap[PAGE_SIZE];
 	DECLSPEC_ALIGN(PAGE_SIZE) VMCS vmxOn;
 	DECLSPEC_ALIGN(PAGE_SIZE) VMCS vmcs;

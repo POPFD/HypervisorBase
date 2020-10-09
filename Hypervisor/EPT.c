@@ -1,5 +1,7 @@
 #include <ntifs.h>
+#include <intrin.h>
 #include "EPT.h"
+#include "Intrinsics.h"
 #include "Debug.h"
 
 /******************** External API ********************/
@@ -292,6 +294,15 @@ PEPT_PML1_ENTRY EPT_getPML1EFromAddress(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS 
 	}
 
 	return result;
+}
+
+void EPT_invalidateAndFlush(PEPT_CONFIG eptConfig)
+{
+	INVEPT_DESCRIPTOR eptDescriptor;
+
+	eptDescriptor.EptPointer = eptConfig->eptPointer.Flags;
+	eptDescriptor.Reserved = 0;
+	__invept(InveptSingleContext, &eptDescriptor);
 }
 
 /******************** Module Code ********************/

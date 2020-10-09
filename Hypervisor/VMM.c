@@ -37,9 +37,9 @@ NTSTATUS VMM_init(PVMM_DATA lpData)
 	/* Capture the control registers for the processor. */
 	captureControlRegisters(&lpData->controlRegisters);
 	DEBUG_PRINT("VMM %d Control Registers:\r\n"
-				"\tCR0: %X\r\n"
-				"\tCR3: %X\r\n"
-				"\tCR4: %X\r\n",
+				"\tCR0: %I64X\r\n"
+				"\tCR3: %I64X\r\n"
+				"\tCR4: %I64X\r\n",
 				lpData->processorIndex, lpData->controlRegisters.Cr0, 
 				lpData->controlRegisters.Cr3, lpData->controlRegisters.Cr4);
 
@@ -87,6 +87,9 @@ static NTSTATUS launchVMMOnProcessor(PVMM_DATA lpData)
 	status = MemManage_init(&lpData->mmContext, lpData->hostCR3);
 	if (NT_SUCCESS(status))
 	{
+		/* Initialise the MTF structure. */
+		MTF_initialise(&lpData->mtfConfig);
+
 		/* Initialise EPT structure. */
 		EPT_initialise(&lpData->eptConfig, (const PMTRR_RANGE)&lpData->mtrrTable);
 
@@ -427,7 +430,7 @@ static NTSTATUS launchVMX(void)
 	}
 #endif
 
-	NTSTATUS result;
+	NTSTATUS result = FALSE;
 	__vmx_vmread(VMCS_VM_INSTRUCTION_ERROR, &result);
 
 	/* Exit VMX root mode. */

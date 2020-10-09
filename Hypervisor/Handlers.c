@@ -144,6 +144,21 @@ static void handleExitReason(PVMM_DATA lpData)
 			break;
 		}
 
+		case VMX_EXIT_REASON_MONITOR_TRAP_FLAG:
+		{
+			if (TRUE == MTF_handleTrap(&lpData->mtfConfig))
+			{
+				/* If handled correctly, move to next instruction. */
+				moveToNextInstruction = TRUE;
+			}
+			else
+			{
+				DbgBreakPoint();
+			}
+
+			break;
+		}
+
 		case VMX_EXIT_REASON_EPT_VIOLATION:
 		{
 			if (TRUE == EPT_handleViolation(&lpData->eptConfig))

@@ -118,6 +118,45 @@ BOOLEAN EPT_handleViolation(PEPT_CONFIG eptConfig)
 		}
 	}
 
+	if (FALSE == result)
+	{
+		/*** DEBUG ***/
+
+		/* Print the information regarding where the violation took place. */
+		PVOID virtPA = MmGetVirtualForPhysical(guestPA);
+
+		DEBUG_PRINT("Unhandled EPT violation: PhysAlign %p\tPhysReal %p\tVirtReal %p\n", 
+			PAGE_ALIGN(guestPA.QuadPart),
+			(PVOID)guestPA.QuadPart,
+			virtPA);
+
+		/* Print the guest RIP. */
+		SIZE_T guestRIP;
+		__vmx_vmread(VMCS_GUEST_RIP, &guestRIP);
+		DEBUG_PRINT("\tGuest RIP: %p\n\n", (PVOID)guestRIP);
+
+		/* Print the violation qualification information. */
+		VMX_EXIT_QUALIFICATION_EPT_VIOLATION qualification;
+		__vmx_vmread(VMCS_EXIT_QUALIFICATION, &qualification.Flags);
+
+		DEBUG_PRINT("\tQualification.ReadAccess: 0x%I64X\n", qualification.ReadAccess);
+		DEBUG_PRINT("\tQualification.WriteAccess: 0x%I64X\n", qualification.WriteAccess);
+		DEBUG_PRINT("\tQualification.ExecuteAccess: 0x%I64X\n", qualification.ExecuteAccess);
+		DEBUG_PRINT("\tQualification.EptReadable: 0x%I64X\n", qualification.EptReadable);
+		DEBUG_PRINT("\tQualification.EptWriteable: 0x%I64X\n", qualification.EptWriteable);
+		DEBUG_PRINT("\tQualification.EptExecutable: 0x%I64X\n", qualification.EptExecutable);
+		DEBUG_PRINT("\tQualification.EptExecutableForUserMode: 0x%I64X\n", qualification.EptExecutableForUserMode);
+		DEBUG_PRINT("\tQualification.ValidGuestLinearAddress: 0x%I64X\n", qualification.ValidGuestLinearAddress);
+		DEBUG_PRINT("\tQualification.CausedByTranslation: 0x%I64X\n", qualification.CausedByTranslation);
+		DEBUG_PRINT("\tQualification.UserModeLinearAddress: 0x%I64X\n", qualification.UserModeLinearAddress);
+		DEBUG_PRINT("\tQualification.ReadableWritablePage: 0x%I64X\n", qualification.ReadableWritablePage);
+		DEBUG_PRINT("\tQualification.ExecuteDisablePage: 0x%I64X\n", qualification.ExecuteDisablePage);
+		DEBUG_PRINT("\tQualification.NmiUnblocking: 0x%I64X\n", qualification.NmiUnblocking);
+		DEBUG_PRINT("\tQualification.Reserved1: 0x%I64X\n", qualification.Reserved1);
+
+		DbgBreakPoint();
+	}
+
 	return result;
 }
 

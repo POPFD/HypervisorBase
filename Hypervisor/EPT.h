@@ -32,7 +32,7 @@
 
 typedef EPT_PML4 EPT_PML4_POINTER, *PEPT_PML4_POINTER;
 typedef EPDPTE EPT_PML3_POINTER, *PEPT_PML3_POINTER;
-typedef EPDE_2MB EPT_PML2_ENTRY, *PEPT_PML2_ENTRY;
+typedef EPDE_2MB EPT_PML2_2MB, *PEPT_PML2_2MB;
 typedef EPDE EPT_PML2_POINTER, *PEPT_PML2_POINTER;
 typedef EPTE EPT_PML1_ENTRY, *PEPT_PML1_ENTRY;
 
@@ -43,7 +43,7 @@ typedef struct _EPT_DYNAMIC_SPLIT
 	DECLSPEC_ALIGN(PAGE_SIZE) EPT_PML1_ENTRY PML1[EPT_PML1E_COUNT];
 
 	/* A pointer to the 2MB entry in the page table which this split was created for. */
-	PEPT_PML2_ENTRY pml2Entry;
+	PEPT_PML2_2MB pml2Entry;
 
 	/* List entry for the dynamic split, will be used to keep track of all split entries. */
 	LIST_ENTRY listEntry;
@@ -60,7 +60,7 @@ typedef struct _EPT_CONFIG
 
 	/* For each 1GB PML3 entry, create 512 2MB regions. We are using 2MB pages as the smallest paging size in
 	* the map so that we do not need to allocate individual 4096 PML1 paging structures. */
-	DECLSPEC_ALIGN(PAGE_SIZE) EPT_PML2_ENTRY PML2[EPT_PML3E_COUNT][EPT_PML2E_COUNT];
+	DECLSPEC_ALIGN(PAGE_SIZE) EPT_PML2_2MB PML2[EPT_PML3E_COUNT][EPT_PML2E_COUNT];
 
 	/* List all of the EPT handlers that are used. */
 	LIST_ENTRY handlerList;
@@ -104,6 +104,6 @@ void EPT_initialise(PEPT_CONFIG eptTable, const PMTRR_RANGE mtrrTable);
 BOOLEAN EPT_handleViolation(PEPT_CONFIG eptConfig);
 NTSTATUS EPT_addViolationHandler(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA, fnEPTHandlerCallback callback, PVOID userParameter);
 NTSTATUS EPT_splitLargePage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);
-PEPT_PML2_ENTRY EPT_getPML2EFromAddress(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);
+PEPT_PML2_2MB EPT_getPML2EFromAddress(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);
 PEPT_PML1_ENTRY EPT_getPML1EFromAddress(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);
 void EPT_invalidateAndFlush(PEPT_CONFIG eptConfig);

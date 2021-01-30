@@ -61,7 +61,7 @@ void EPT_initialise(PEPT_CONFIG eptConfig, const PMTRR_RANGE mtrrTable)
 	}
 
 	/* Create a large PDE. */
-	EPT_PML2_ENTRY tempLargePML2E = { 0 };
+	EPT_PML2_2MB tempLargePML2E = { 0 };
 	tempLargePML2E.ReadAccess = 1;
 	tempLargePML2E.WriteAccess = 1;
 	tempLargePML2E.ExecuteAccess = 1;
@@ -157,7 +157,7 @@ NTSTATUS EPT_splitLargePage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddr
 	NTSTATUS status;
 
 	/* Find the PML2E that relates to the physical address. */
-	PEPT_PML2_ENTRY targetPML2E = EPT_getPML2EFromAddress(eptConfig, physicalAddress);
+	PEPT_PML2_2MB targetPML2E = EPT_getPML2EFromAddress(eptConfig, physicalAddress);
 
 	if (NULL != targetPML2E)
 	{
@@ -231,9 +231,9 @@ NTSTATUS EPT_splitLargePage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddr
 	return status;
 }
 
-PEPT_PML2_ENTRY EPT_getPML2EFromAddress(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress)
+PEPT_PML2_2MB EPT_getPML2EFromAddress(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress)
 {
-	PEPT_PML2_ENTRY result;
+	PEPT_PML2_2MB result;
 
 	UINT64 unsignedAddr = physicalAddress.QuadPart;
 
@@ -269,7 +269,7 @@ PEPT_PML1_ENTRY EPT_getPML1EFromAddress(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS 
 		UINT64 indexPML3 = ADDRMASK_EPT_PML3_INDEX(unsignedAddr);
 		UINT64 indexPML2 = ADDRMASK_EPT_PML2_INDEX(unsignedAddr);
 
-		PEPT_PML2_ENTRY entryPML2 = &eptConfig->PML2[indexPML3][indexPML2];
+		PEPT_PML2_2MB entryPML2 = &eptConfig->PML2[indexPML3][indexPML2];
 
 		/* Ensure that PML2 entry is not a large page, if it is this means we are at the lowest level already
 		* so it is impossible to get PML1E as it doesn't exist. */

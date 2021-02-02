@@ -335,6 +335,14 @@ static void incrementRIP(void)
 			guestRFLAGS.TrapFlag = FALSE;
 			__vmx_vmwrite(VMCS_GUEST_RFLAGS, guestRFLAGS.Flags);
 
+			/* Clear the blocking interruptibility state fields (apart from NMI)
+			 * So bits [2:0]. */
+			UINT64 guestIS = 0;
+			__vmx_vmread(VMCS_GUEST_INTERRUPTIBILITY_STATE, &guestIS);
+
+			guestIS &= ~7;
+			__vmx_vmwrite(VMCS_GUEST_INTERRUPTIBILITY_STATE, guestIS);
+
 			/* Inject the interrupt for TF. */
 			VMENTRY_INTERRUPT_INFORMATION interruptInfo = { 0 };
 			interruptInfo.Vector = Debug;

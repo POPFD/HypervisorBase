@@ -11,6 +11,9 @@
 
 /******************** External API ********************/
 
+/* DEBUG: Just some fields for monitoring VMExits. */
+SIZE_T monitoredRangeStart = 0;
+SIZE_T monitoredRangeEnd = 0;
 
 /******************** Module Typedefs ********************/
 
@@ -25,6 +28,7 @@ static volatile ULONG64 lastGuestTSC = 0;
 
 /******************** Module Prototypes ********************/
 static void handleExitReason(PVMM_DATA lpData);
+static void incrementRIP(void);
 static void indicateVMXFail(void);
 
 /******************** Public Code ********************/
@@ -110,6 +114,31 @@ static void handleExitReason(PVMM_DATA lpData)
 	size_t exitReason;
 	__vmx_vmread(VMCS_EXIT_REASON, &exitReason);
 	exitReason &= 0xFFFF;
+
+	/* Check to see if we are actively monitoring a range. */
+	if ((0 != monitoredRangeStart) && (0 != monitoredRangeEnd))
+	{
+		/* Check to see if guest RIP is within this range. */
+		/* If so, we log the VMM exit. */
+		size_t guestRIP;
+		__vmx_vmread(VMCS_GUEST_RIP, &guestRIP);
+
+		if ((guestRIP >= monitoredRangeStart) && (guestRIP <= monitoredRangeEnd))
+		{
+			DEBUG_PRINT("VMM exit in monitored range.\n");
+			DEBUG_PRINT("\tExit Reason: 0x%I64X\n", exitReason);
+			DEBUG_PRINT("\tGuest RIP: 0x%I64X\n", guestRIP);
+
+			static SIZE_T lastExitRIP = 0;
+
+			/* Some debug code to prevent multiple breaks on same instruction due to loops */
+			if (guestRIP != lastExitRIP)
+			{
+				DbgBreakPoint();
+				lastExitRIP = guestRIP;
+			}
+		}
+	}
 
 	switch (exitReason)
 	{
@@ -272,16 +301,48 @@ static void handleExitReason(PVMM_DATA lpData)
 
 	if (TRUE == moveToNextInstruction)
 	{
-		/* Move the instruction pointer to the next instruction after the one that
-		* caused the exit. */
-		size_t guestRIP;
-		__vmx_vmread(VMCS_GUEST_RIP, &guestRIP);
+		incrementRIP();
+	}
+}
 
-		size_t instructionLength;
-		__vmx_vmread(VMCS_VMEXIT_INSTRUCTION_LENGTH, &instructionLength);
-		guestRIP += instructionLength;
+static void incrementRIP(void)
+{
+	/* Move the instruction pointer to the next instruction after the one that
+	* caused the exit. */
+	size_t guestRIP;
+	__vmx_vmread(VMCS_GUEST_RIP, &guestRIP);
 
-		__vmx_vmwrite(VMCS_GUEST_RIP, guestRIP);
+	size_t instructionLength;
+	__vmx_vmread(VMCS_VMEXIT_INSTRUCTION_LENGTH, &instructionLength);
+	guestRIP += instructionLength;
+
+	__vmx_vmwrite(VMCS_GUEST_RIP, guestRIP);
+
+	RFLAGS guestRFLAGS;
+	__vmx_vmread(VMCS_GUEST_RFLAGS, &guestRFLAGS.Flags);
+
+	/* Check to see if trap flag set. */
+	if (TRUE == guestRFLAGS.TrapFlag)
+	{
+		/* Check to see if bit BTF is clear in DEBUGCTL, if so
+		 * single step on instructions. */
+		IA32_DEBUGCTL_REGISTER debugCtrl = { 0 };
+		__vmx_vmread(VMCS_GUEST_DEBUGCTL, &debugCtrl.Flags);
+
+		if (FALSE == debugCtrl.Btf)
+		{
+			/* Clear the trap flag, and write to guest. */
+			guestRFLAGS.TrapFlag = FALSE;
+			__vmx_vmwrite(VMCS_GUEST_RFLAGS, guestRFLAGS.Flags);
+
+			/* Inject the interrupt for TF. */
+			VMENTRY_INTERRUPT_INFORMATION interruptInfo = { 0 };
+			interruptInfo.Vector = Debug;
+			interruptInfo.InterruptionType = HardwareException;
+			interruptInfo.DeliverErrorCode = FALSE;
+			interruptInfo.Valid = TRUE;
+			__vmx_vmwrite(VMCS_CTRL_VMENTRY_INTERRUPTION_INFORMATION_FIELD, interruptInfo.Flags);
+		}
 	}
 }
 

@@ -225,9 +225,12 @@ static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS 
 				/* Zero the newly allocated page config. */
 				RtlZeroMemory(shadowConfig, sizeof(SHADOW_PAGE));
 
-				/* Store the physical address of the targeted page & offset into page. */
-				PHYSICAL_ADDRESS physicalAlign;
-				physicalAlign.QuadPart = (LONGLONG)PAGE_ALIGN(targetPA.QuadPart);
+				/* Calculate the start and end of the physical address page we are hooking. */
+				PHYSICAL_ADDRESS physStart;
+				PHYSICAL_ADDRESS physEnd;
+
+				physStart.QuadPart = (LONGLONG)PAGE_ALIGN(targetPA.QuadPart);
+				physEnd.QuadPart = physStart.QuadPart + PAGE_SIZE;
 
 				/* Store the target process. */
 				shadowConfig->targetCR3 = targetCR3;
@@ -267,8 +270,15 @@ static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS 
 					/* Copy the fake bytes */
 					RtlCopyMemory(&shadowConfig->executePage[0], executePage, PAGE_SIZE);
 
+					/* Calculate the range, that this handler will be for. */
+					
+
+					PHYSICAL_RANGE handlerRange;
+					handlerRange.start = physStart;
+					handlerRange.end = physEnd;
+
 					/* Add this shadow hook to the EPT shadow list. */
-					status = EPT_addViolationHandler(eptConfig, physicalAlign, handleShadowExec, (PVOID)shadowConfig);
+					status = EPT_addViolationHandler(eptConfig, handlerRange, handleShadowExec, (PVOID)shadowConfig);
 				}
 				else
 				{

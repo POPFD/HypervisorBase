@@ -36,6 +36,12 @@ typedef EPDE_2MB EPT_PML2_2MB, *PEPT_PML2_2MB;
 typedef EPDE EPT_PML2_POINTER, *PEPT_PML2_POINTER;
 typedef EPTE EPT_PML1_ENTRY, *PEPT_PML1_ENTRY;
 
+typedef struct _PHYSICAL_RANGE
+{
+	PHYSICAL_ADDRESS start;
+	PHYSICAL_ADDRESS end;
+} PHYSICAL_RANGE, *PPHYSICAL_RANGE;
+
 /* Structure that will hold the PML1 data for a dynamically split PML2 entry. */
 typedef struct _EPT_DYNAMIC_SPLIT
 {
@@ -81,8 +87,9 @@ typedef BOOLEAN(*fnEPTHandlerCallback)(PEPT_CONFIG eptConfig, PVOID userBuffer);
 * are used for parsing violations. */
 typedef struct _EPT_HANDLER
 {
-	/* Base address of the page that will cause the violation. */
-	PHYSICAL_ADDRESS physicalAlign;
+	/* Range of physical memory that the handler
+	 * is registered to. */
+	PHYSICAL_RANGE physRange;
 
 	/* Callback of the handler, that will be called for processing the violation. */
 	fnEPTHandlerCallback callback;
@@ -102,7 +109,7 @@ typedef struct _EPT_HANDLER
 
 void EPT_initialise(PEPT_CONFIG eptTable, const PMTRR_RANGE mtrrTable);
 BOOLEAN EPT_handleViolation(PEPT_CONFIG eptConfig);
-NTSTATUS EPT_addViolationHandler(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA, fnEPTHandlerCallback callback, PVOID userParameter);
+NTSTATUS EPT_addViolationHandler(PEPT_CONFIG eptConfig, PHYSICAL_RANGE physicalRange, fnEPTHandlerCallback callback, PVOID userParameter);
 NTSTATUS EPT_splitLargePage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);
 PEPT_PML2_2MB EPT_getPML2EFromAddress(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);
 PEPT_PML1_ENTRY EPT_getPML1EFromAddress(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);

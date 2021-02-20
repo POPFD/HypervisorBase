@@ -97,8 +97,8 @@ BOOLEAN EPT_handleViolation(PEPT_CONFIG eptConfig)
 	BOOLEAN result = FALSE;
 
 	/* Get the physical address of the page that caused the violation. */
-	PHYSICAL_ADDRESS guestPA;
-	__vmx_vmread(VMCS_GUEST_PHYSICAL_ADDRESS, (SIZE_T*)&guestPA.QuadPart);
+	PHYSICAL_ADDRESS violationGuestPA;
+	__vmx_vmread(VMCS_GUEST_PHYSICAL_ADDRESS, (SIZE_T*)&violationGuestPA.QuadPart);
 
 	/* Search the list of EPT handlers and determine which one to call. */
 	for (PLIST_ENTRY currentEntry = eptConfig->handlerList.Flink;
@@ -109,9 +109,9 @@ BOOLEAN EPT_handleViolation(PEPT_CONFIG eptConfig)
 		 * the linked list is holding. */
 		PEPT_HANDLER eptHandler = CONTAINING_RECORD(currentEntry, EPT_HANDLER, listEntry);
 
-		/* Check to see if the physical address associated with the handler matches,
-		 * if so we call that handler. */
-		if (PAGE_ALIGN(guestPA.QuadPart) == PAGE_ALIGN(eptHandler->physicalAlign.QuadPart))
+		/* Check to see if the physical address associated with the handler matches. */
+		if ((violationGuestPA.QuadPart >= eptHandler->physRange.start.QuadPart) &&
+			(violationGuestPA.QuadPart <= eptHandler->physRange.end.QuadPart))
 		{
 			result = eptHandler->callback(eptConfig, eptHandler->userParameter);
 			break;
@@ -123,11 +123,11 @@ BOOLEAN EPT_handleViolation(PEPT_CONFIG eptConfig)
 		/*** DEBUG ***/
 
 		/* Print the information regarding where the violation took place. */
-		PVOID virtPA = MmGetVirtualForPhysical(guestPA);
+		PVOID virtPA = MmGetVirtualForPhysical(violationGuestPA);
 
 		DEBUG_PRINT("Unhandled EPT violation: PhysAlign %p\tPhysReal %p\tVirtReal %p\n", 
-			PAGE_ALIGN(guestPA.QuadPart),
-			(PVOID)guestPA.QuadPart,
+			PAGE_ALIGN(violationGuestPA.QuadPart),
+			(PVOID)violationGuestPA.QuadPart,
 			virtPA);
 
 		/* Print the guest RIP. */
@@ -160,7 +160,7 @@ BOOLEAN EPT_handleViolation(PEPT_CONFIG eptConfig)
 	return result;
 }
 
-NTSTATUS EPT_addViolationHandler(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA, fnEPTHandlerCallback callback, PVOID userParameter)
+NTSTATUS EPT_addViolationHandler(PEPT_CONFIG eptConfig, PHYSICAL_RANGE physicalRange, fnEPTHandlerCallback callback, PVOID userParameter)
 {
 	NTSTATUS status;
 
@@ -170,7 +170,7 @@ NTSTATUS EPT_addViolationHandler(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS guestPA
 		PEPT_HANDLER newHandler = (PEPT_HANDLER)ExAllocatePool(NonPagedPoolNx, sizeof(EPT_HANDLER));
 		if (NULL != newHandler)
 		{
-			newHandler->physicalAlign.QuadPart = (LONGLONG)PAGE_ALIGN(guestPA.QuadPart);
+			newHandler->physRange = physicalRange;
 			newHandler->callback = callback;
 			newHandler->userParameter = userParameter;
 

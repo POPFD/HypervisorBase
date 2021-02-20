@@ -115,30 +115,30 @@ static void handleExitReason(PVMM_DATA lpData)
 	__vmx_vmread(VMCS_EXIT_REASON, &exitReason);
 	exitReason &= 0xFFFF;
 
-	/* Check to see if we are actively monitoring a range. */
-	if ((0 != monitoredRangeStart) && (0 != monitoredRangeEnd))
-	{
-		/* Check to see if guest RIP is within this range. */
-		/* If so, we log the VMM exit. */
-		size_t guestRIP;
-		__vmx_vmread(VMCS_GUEST_RIP, &guestRIP);
+	///* Check to see if we are actively monitoring a range. */
+	//if ((0 != monitoredRangeStart) && (0 != monitoredRangeEnd))
+	//{
+	//	/* Check to see if guest RIP is within this range. */
+	//	/* If so, we log the VMM exit. */
+	//	size_t guestRIP;
+	//	__vmx_vmread(VMCS_GUEST_RIP, &guestRIP);
 
-		if ((guestRIP >= monitoredRangeStart) && (guestRIP <= monitoredRangeEnd))
-		{
-			DEBUG_PRINT("VMM exit in monitored range.\n");
-			DEBUG_PRINT("\tExit Reason: 0x%I64X\n", exitReason);
-			DEBUG_PRINT("\tGuest RIP: 0x%I64X\n", guestRIP);
+	//	if ((guestRIP >= monitoredRangeStart) && (guestRIP <= monitoredRangeEnd))
+	//	{
+	//		DEBUG_PRINT("VMM exit in monitored range.\n");
+	//		DEBUG_PRINT("\tExit Reason: 0x%I64X\n", exitReason);
+	//		DEBUG_PRINT("\tGuest RIP: 0x%I64X\n", guestRIP);
 
-			static SIZE_T lastExitRIP = 0;
+	//		static SIZE_T lastExitRIP = 0;
 
-			/* Some debug code to prevent multiple breaks on same instruction due to loops */
-			if (guestRIP != lastExitRIP)
-			{
-				//DbgBreakPoint();
-				lastExitRIP = guestRIP;
-			}
-		}
-	}
+	//		/* Some debug code to prevent multiple breaks on same instruction due to loops */
+	//		if (guestRIP != lastExitRIP)
+	//		{
+	//			//DbgBreakPoint();
+	//			lastExitRIP = guestRIP;
+	//		}
+	//	}
+	//}
 
 	switch (exitReason)
 	{

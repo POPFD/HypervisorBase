@@ -187,6 +187,10 @@
       </SubType>
     </ClInclude>
     <ClInclude Include="MTRR.h" />
+    <ClInclude Include="PageTable.h">
+      <SubType>
+      </SubType>
+    </ClInclude>
     <ClInclude Include="Process.h" />
     <ClInclude Include="VMCALL.h" />
     <ClInclude Include="VMHook.h" />
@@ -206,6 +210,10 @@
       </SubType>
     </ClCompile>
     <ClCompile Include="MTRR.c" />
+    <ClCompile Include="PageTable.c">
+      <SubType>
+      </SubType>
+    </ClCompile>
     <ClCompile Include="VMCALL.c" />
     <ClCompile Include="VMHook.c" />
     <ClCompile Include="VMM.c" />

@@ -134,7 +134,7 @@ static void handleExitReason(PVMM_DATA lpData)
 			/* Some debug code to prevent multiple breaks on same instruction due to loops */
 			if (guestRIP != lastExitRIP)
 			{
-				DbgBreakPoint();
+				//DbgBreakPoint();
 				lastExitRIP = guestRIP;
 			}
 		}

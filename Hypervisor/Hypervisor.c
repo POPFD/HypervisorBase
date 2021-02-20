@@ -1,6 +1,7 @@
 #include <ntifs.h>
 #include <intrin.h>
 #include "Hypervisor.h"
+#include "PageTable.h"
 #include "VMM.h"
 #include "Debug.h"
 #include "ia32.h"
@@ -40,15 +41,21 @@ NTSTATUS Hypervisor_init(void)
 	if (NT_SUCCESS(status))
 	{
 		/* Holds the CR3/PML4 entry that our HOST (when we are VMX root) will use. */
-		CR3 hostCR3;
-		hostCR3.Flags = __readcr3();
+		CR3 originalCR3;
+		CR3 vmCR3;
+		originalCR3.Flags = __readcr3();
 
-		/* We need to notify each logical processor to start the hypervisor.
-		 * This is done using using a IPI.
-		 *
-		 * TODO: IPI result only returns callee processors status
-		 *		 We are discarding other X logical processors results, need to fix this. */
-		status = (NTSTATUS)KeIpiGenericCall(logicalProcessorInit, (ULONG_PTR)hostCR3.Flags);
+		status = PageTable_init(originalCR3, &vmCR3);
+		if (NT_SUCCESS(status))
+		{
+
+			/* We need to notify each logical processor to start the hypervisor.
+			 * This is done using using a IPI.
+			 *
+			 * TODO: IPI result only returns callee processors status
+			 *		 We are discarding other X logical processors results, need to fix this. */
+			status = (NTSTATUS)KeIpiGenericCall(logicalProcessorInit, (ULONG_PTR)vmCR3.Flags);
+		}
 	}
 
 	return status;

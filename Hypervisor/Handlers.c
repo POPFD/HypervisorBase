@@ -67,16 +67,16 @@ DECLSPEC_NORETURN VOID Handlers_guestToHost(PCONTEXT guestContext)
 	/* Copy the guest context into our LP data structure. */
 	RtlCopyMemory(&lpData->guestContext, guestContext, sizeof(CONTEXT));
 
-	UINT64 exitTSCStart = __rdtsc();
+	//UINT64 exitTSCStart = __rdtsc();
 
 	/* Handle the exit reason. */
 	handleExitReason(lpData);
 
-	UINT64 exitTSCTime = __rdtsc() - exitTSCStart;
-	UINT64 correctionTime = exitTSCTime + VM_EXIT_OVERHEAD;
+	//UINT64 exitTSCTime = __rdtsc() - exitTSCStart;
+	//UINT64 correctionTime = exitTSCTime + VM_EXIT_OVERHEAD;
 
 	/* Increment the offset counter for TSC. */
-	InterlockedAdd64((volatile LONG64*)&tscOffset, correctionTime);
+	//InterlockedAdd64((volatile LONG64*)&tscOffset, correctionTime);
 
 	/* Now to restore back to the guest. */
 
@@ -281,6 +281,7 @@ static void handleExitReason(PVMM_DATA lpData)
 		case VMX_EXIT_REASON_EXECUTE_VMWRITE:
 		case VMX_EXIT_REASON_EXECUTE_VMXOFF:
 		case VMX_EXIT_REASON_EXECUTE_VMXON:
+		case VMX_EXIT_REASON_EXECUTE_INVEPT:
 		{
 			indicateVMXFail();
 			moveToNextInstruction = FALSE;

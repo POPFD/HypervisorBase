@@ -37,7 +37,7 @@ typedef struct _SHADOW_PAGE
 
 
 /******************** Module Prototypes ********************/
-static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, PVOID userBuffer);
+static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, PCONTEXT guestContext, PVOID userBuffer);
 static NTSTATUS hidePage(PEPT_CONFIG eptConfig, CR3 targetCR3, PHYSICAL_ADDRESS targetPA, PVOID executePage);
 static void setAllShadowsToReadWrite(PEPT_CONFIG eptConfig);
 
@@ -154,9 +154,10 @@ NTSTATUS VMShadow_hideExecInProcess(
 
 /******************** Module Code ********************/
 
-static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, PVOID userBuffer)
+static BOOLEAN handleShadowExec(PEPT_CONFIG eptConfig, PCONTEXT guestContext, PVOID userBuffer)
 {
 	UNREFERENCED_PARAMETER(eptConfig);
+	UNREFERENCED_PARAMETER(guestContext);
 	BOOLEAN result = FALSE;
 
 	/* Cast the exit qualification to it's proper type, as an EPT violation. */

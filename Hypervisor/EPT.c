@@ -91,7 +91,7 @@ void EPT_initialise(PEPT_CONFIG eptConfig, const PMTRR_RANGE mtrrTable)
 	}
 }
 
-BOOLEAN EPT_handleViolation(PEPT_CONFIG eptConfig)
+BOOLEAN EPT_handleViolation(PEPT_CONFIG eptConfig, PCONTEXT guestContext)
 {
 	/* Result indicates handled successfully. */
 	BOOLEAN result = FALSE;
@@ -113,7 +113,7 @@ BOOLEAN EPT_handleViolation(PEPT_CONFIG eptConfig)
 		if ((violationGuestPA.QuadPart >= eptHandler->physRange.start.QuadPart) &&
 			(violationGuestPA.QuadPart <= eptHandler->physRange.end.QuadPart))
 		{
-			result = eptHandler->callback(eptConfig, eptHandler->userParameter);
+			result = eptHandler->callback(eptConfig, guestContext, eptHandler->userParameter);
 			break;
 		}
 	}

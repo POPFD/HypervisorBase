@@ -81,7 +81,7 @@ typedef struct _EPT_CONFIG
 } EPT_CONFIG, *PEPT_CONFIG;
 
 /* Callback function for the EPT violation handler. */
-typedef BOOLEAN(*fnEPTHandlerCallback)(PEPT_CONFIG eptConfig, PVOID userBuffer);
+typedef BOOLEAN(*fnEPTHandlerCallback)(PEPT_CONFIG eptConfig, PCONTEXT guestContext, PVOID userBuffer);
 
 /* Structure that holds the information of each handler that
 * are used for parsing violations. */
@@ -108,7 +108,7 @@ typedef struct _EPT_HANDLER
 /******************** Public Prototypes ********************/
 
 void EPT_initialise(PEPT_CONFIG eptTable, const PMTRR_RANGE mtrrTable);
-BOOLEAN EPT_handleViolation(PEPT_CONFIG eptConfig);
+BOOLEAN EPT_handleViolation(PEPT_CONFIG eptConfig, PCONTEXT guestContext);
 NTSTATUS EPT_addViolationHandler(PEPT_CONFIG eptConfig, PHYSICAL_RANGE physicalRange, fnEPTHandlerCallback callback, PVOID userParameter);
 NTSTATUS EPT_splitLargePage(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);
 PEPT_PML2_2MB EPT_getPML2EFromAddress(PEPT_CONFIG eptConfig, PHYSICAL_ADDRESS physicalAddress);

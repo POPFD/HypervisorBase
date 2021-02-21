@@ -12,14 +12,8 @@ typedef struct _MM_CONTEXT
 	PTE_64* reservedPagePte;
 } MM_CONTEXT, *PMM_CONTEXT;
 
-/* Each level of a paging structure. */
-typedef enum
-{
-	PT_LEVEL_PTE = 1,
-	PT_LEVEL_PDE = 2,
-	PT_LEVEL_PDPTE = 3,
-	PT_LEVEL_PML4E = 4
-} PT_LEVEL;
+typedef SIZE_T HOST_PHYS_ADDRESS;
+typedef SIZE_T GUEST_VIRTUAL_ADDRESS;
 
 /******************** Public Constants ********************/
 
@@ -28,11 +22,8 @@ typedef enum
 /******************** Public Prototypes ********************/
 NTSTATUS MemManage_init(PMM_CONTEXT context, CR3 hostCR3);
 void MemManage_uninit(PMM_CONTEXT context);
-NTSTATUS MemManage_changeMemoryProt(PMM_CONTEXT context, CR3 tableBase, PUINT8 baseAddress, SIZE_T size, BOOLEAN writable, BOOLEAN executable);
-NTSTATUS MemManage_readVirtualAddress(PMM_CONTEXT context, CR3 tableBase, PVOID guestVA, PVOID buffer, SIZE_T size);
-NTSTATUS MemManage_writeVirtualAddress(PMM_CONTEXT context, CR3 tableBase, PVOID guestVA, CONST PVOID buffer, SIZE_T size);
-NTSTATUS MemManage_readPhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS physicalAddress, VOID* buffer, SIZE_T bytesToCopy);
-NTSTATUS MemManage_writePhysicalAddress(PMM_CONTEXT context, PHYSICAL_ADDRESS physicalAddress, VOID* buffer, SIZE_T bytesToCopy);
-NTSTATUS MemManage_getPAForGuest(PMM_CONTEXT context, CR3 guestTableBase, PVOID guestVA, PHYSICAL_ADDRESS* physAddr);
-PHYSICAL_ADDRESS MemManage_getPTEAddrForGuest(PMM_CONTEXT context, CR3 tableBase, PVOID virtualAddress, PT_LEVEL* level);
+NTSTATUS MemManage_readVirtualAddress(PMM_CONTEXT context, CR3 tableBase, GUEST_VIRTUAL_ADDRESS guestVA, PVOID buffer, SIZE_T size);
+NTSTATUS MemManage_writeVirtualAddress(PMM_CONTEXT context, CR3 tableBase, GUEST_VIRTUAL_ADDRESS guestVA, CONST PVOID buffer, SIZE_T size);
+NTSTATUS MemManage_readPhysicalAddress(PMM_CONTEXT context, HOST_PHYS_ADDRESS physicalAddress, VOID* buffer, SIZE_T bytesToCopy);
+NTSTATUS MemManage_writePhysicalAddress(PMM_CONTEXT context, HOST_PHYS_ADDRESS physicalAddress, VOID* buffer, SIZE_T bytesToCopy);
 CR3 MemManage_getPageTableBase(PEPROCESS process);

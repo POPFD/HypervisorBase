@@ -102,6 +102,12 @@
     <ClInclude Include="PageTable.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="EventLog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GuestShim.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="CPUID.c">
@@ -144,6 +150,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="PageTable.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="EventLog.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GuestShim.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

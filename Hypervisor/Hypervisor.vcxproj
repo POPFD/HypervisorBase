@@ -175,7 +175,9 @@
     <ClInclude Include="CPUID.h" />
     <ClInclude Include="Debug.h" />
     <ClInclude Include="EPT.h" />
+    <ClInclude Include="EventLog.h" />
     <ClInclude Include="GDT.h" />
+    <ClInclude Include="GuestShim.h" />
     <ClInclude Include="Handlers.h" />
     <ClInclude Include="HandlerShim.h" />
     <ClInclude Include="Hypervisor.h" />
@@ -200,7 +202,9 @@
   <ItemGroup>
     <ClCompile Include="CPUID.c" />
     <ClCompile Include="EPT.c" />
+    <ClCompile Include="EventLog.c" />
     <ClCompile Include="GDT.c" />
+    <ClCompile Include="GuestShim.c" />
     <ClCompile Include="Handlers.c" />
     <ClCompile Include="Hypervisor.c" />
     <ClCompile Include="MemManage.c" />

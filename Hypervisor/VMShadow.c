@@ -2,6 +2,7 @@
 #include <intrin.h>
 #include "VMShadow.h"
 #include "MemManage.h"
+#include "GuestShim.h"
 #include "Intrinsics.h"
 #include "Debug.h"
 
@@ -118,7 +119,7 @@ NTSTATUS VMShadow_hideExecInProcess(
 	PUINT8 execVA
 )
 {
-	NTSTATUS status;
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
 
 	/* Get the process/page table we want to shadow the memory from. */
 	CR3 tableBase = MemManage_getPageTableBase(targetProcess);
@@ -127,9 +128,9 @@ NTSTATUS VMShadow_hideExecInProcess(
 		/* Calculate the physical address of the target VA,
 		* I know we could calculate this by reading the PTE here and
 		* calculating, however we have a function for this already (at the expense of reading PTE again.. */
-		PHYSICAL_ADDRESS physTargetVA;
-		status = MemManage_getPAForGuest(&lpData->mmContext, tableBase, targetVA, &physTargetVA);
-		if (NT_SUCCESS(status))
+		PHYSICAL_ADDRESS physTargetVA = { 0 };
+		physTargetVA.QuadPart = GuestShim_GuestUVAToHPA(&lpData->mmContext, tableBase, (GUEST_VIRTUAL_ADDRESS)targetVA);
+		if (0 != physTargetVA.QuadPart)
 		{
 			/* Hide the executable page, for that page only. */
 			status = hidePage(&lpData->eptConfig, tableBase, physTargetVA, execVA);

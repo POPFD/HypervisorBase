@@ -2,6 +2,7 @@
 #include "ia32.h"
 
 /******************** Public Typedefs ********************/
+#define MAX_EXTRA_CHARS 50
 
 typedef struct _EVENT_DATA
 {

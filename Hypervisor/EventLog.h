@@ -5,7 +5,6 @@
 /******************** Public Typedefs ********************/
 
 /******************** Public Constants ********************/
-#define MAX_EXTRA_CHARS 50
 
 /******************** Public Variables ********************/
 

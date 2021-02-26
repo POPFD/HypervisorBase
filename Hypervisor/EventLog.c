@@ -98,7 +98,7 @@ NTSTATUS EventLog_logEvent(ULONG procIndex, CR0 guestCR0, CR3 guestCR3,
 
 SIZE_T EventLog_getBufferSize(void)
 {
-	return eventCount;
+	return eventCount * sizeof(EVENT_RECORD);
 }
 
 /******************** Module Code ********************/

@@ -19,6 +19,7 @@ typedef NTSTATUS(*fnActionHandler)(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRTUAL
 
 
 /******************** Module Prototypes ********************/
+static NTSTATUS actionCheckPresence(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRTUAL_ADDRESS buffer, SIZE_T bufferSize);
 static NTSTATUS actionRunAsRoot(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRTUAL_ADDRESS buffer, SIZE_T bufferSize);
 static NTSTATUS actionShadowInProcess(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRTUAL_ADDRESS buffer, SIZE_T bufferSize);
 static NTSTATUS actionGatherEvents(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRTUAL_ADDRESS buffer, SIZE_T bufferSize);
@@ -27,6 +28,7 @@ static NTSTATUS actionGatherEvents(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRTUAL
 
 static const fnActionHandler ACTION_HANDLERS[VMCALL_ACTION_COUNT] =
 {
+	[VMCALL_ACTION_CHECK_PRESENCE] = actionCheckPresence,
 	[VMCALL_ACTION_RUN_AS_ROOT] = actionRunAsRoot,
 	[VMCALL_ACTION_SHADOW_IN_PROCESS] = actionShadowInProcess,
 	[VMCALL_ACTION_GATHER_EVENTS] = actionGatherEvents,
@@ -85,6 +87,16 @@ BOOLEAN VMCALL_handle(PVMM_DATA lpData)
 }
 
 /******************** Module Code ********************/
+
+static NTSTATUS actionCheckPresence(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRTUAL_ADDRESS buffer, SIZE_T bufferSize)
+{
+	UNREFERENCED_PARAMETER(lpData);
+	UNREFERENCED_PARAMETER(guestCR3);
+	UNREFERENCED_PARAMETER(buffer);
+	UNREFERENCED_PARAMETER(bufferSize);
+
+	return STATUS_SUCCESS;
+}
 
 static NTSTATUS actionRunAsRoot(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRTUAL_ADDRESS buffer, SIZE_T bufferSize)
 {

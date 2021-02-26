@@ -64,8 +64,7 @@ static HOST_PHYS_ADDRESS getHostPAFromGuestVA(PMM_CONTEXT mmContext, CR3 guestCR
 	HOST_PHYS_ADDRESS result = 0;
 
 	/* Attempt to get the page table entry and level from the guest,
-	 * from that we can calculate where in host physical memory it is. 
-	 * This is because in host context, all physical memory is identity mapped. */
+	 * from that we can calculate where in host physical memory it is.  */
 	PT_LEVEL tableLevel;
 	PT_ENTRY_64 guestEntry = getGuestPTEFromVA(mmContext, guestCR3, guestVA, &tableLevel);
 	if (0 != guestEntry.Flags)
@@ -156,8 +155,7 @@ static PT_ENTRY_64 getGuestPTEFromVA(PMM_CONTEXT mmContext, CR3 guestCR3, PVOID 
 	SIZE_T indexPML2 = ADDRMASK_PML2_INDEX(guestVA);
 	SIZE_T indexPML1 = ADDRMASK_PML1_INDEX(guestVA);
 
-	/* Read the PML4 address of our paging table.
-	 * As we are identity mapped, VA -> PA as we are identity mapped. */
+	/* Read the PML4 address of our paging table. */
 	PML4E_64* pml4 = (PML4E_64*)(guestCR3.AddressOfPageDirectory * PAGE_SIZE);
 	HOST_PHYS_ADDRESS physPML4E = (HOST_PHYS_ADDRESS)&pml4[indexPML4];
 
@@ -212,7 +210,7 @@ static PT_ENTRY_64 getGuestPTEFromVA(PMM_CONTEXT mmContext, CR3 guestCR3, PVOID 
 
 						if (NT_SUCCESS(status))
 						{
-							result.Flags = readPDE.Flags;
+							result.Flags = readPTE.Flags;
 							*level = PT_LEVEL_PTE;
 						}
 					}

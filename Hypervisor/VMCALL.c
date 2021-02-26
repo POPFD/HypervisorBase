@@ -51,11 +51,6 @@ BOOLEAN VMCALL_handle(PVMM_DATA lpData)
 	 */
 	if (VMCALL_KEY == lpData->guestContext.Rcx)
 	{
-		if (FALSE == KD_DEBUGGER_NOT_PRESENT)
-		{
-			DbgBreakPoint();
-		}
-
 		/* Attempt to read the guest command buffer. */
 		CR3 guestCR3;
 		__vmx_vmread(VMCS_GUEST_CR3, &guestCR3.Flags);
@@ -194,8 +189,30 @@ static NTSTATUS actionGatherEvents(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRTUAL
 			}
 			else
 			{
-				/* TODO: Actually gather events. */
-				status = STATUS_UNSUCCESSFUL;
+				/* Allocate a temporary kernel buffer to hold the events. */
+				PUINT8 tempBuffer = ExAllocatePool(NonPagedPoolNx, params.expectedSize);
+				if (NULL != tempBuffer)
+				{
+					/* Read the events into our allocated buffer. */
+					status = EventLog_retrieveAndClear(tempBuffer, params.expectedSize);
+
+					if (NT_SUCCESS(status))
+					{
+						/* Now write the buffer to the guest VA specified. */
+						status = MemManage_writeVirtualAddress(&lpData->mmContext,
+															   guestCR3,
+															   (GUEST_VIRTUAL_ADDRESS)params.buffer,
+															   tempBuffer,
+															   params.expectedSize);
+					}
+
+					/* Free the allocated temp kernel pool */
+					ExFreePool(tempBuffer);
+				}
+				else
+				{
+					status = STATUS_NO_MEMORY;
+				}
 			}
 
 			/* Write the parameters back to the guest, as they may have been modified. */

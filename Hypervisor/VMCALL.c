@@ -179,7 +179,6 @@ static NTSTATUS actionGatherEvents(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRTUAL
 		status = MemManage_readVirtualAddress(&lpData->mmContext, guestCR3, buffer, &params, sizeof(params));
 		if (NT_SUCCESS(status))
 		{
-
 			/* Check to see if expected size is zero.
 			 * if so, we return the current size of the event log. */
 			if (0 == params.expectedSize)
@@ -193,6 +192,8 @@ static NTSTATUS actionGatherEvents(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRTUAL
 				PUINT8 tempBuffer = ExAllocatePool(NonPagedPoolNx, params.expectedSize);
 				if (NULL != tempBuffer)
 				{
+					RtlZeroMemory(tempBuffer, params.expectedSize);
+
 					/* Read the events into our allocated buffer. */
 					status = EventLog_retrieveAndClear(tempBuffer, params.expectedSize);
 

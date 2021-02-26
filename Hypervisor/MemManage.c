@@ -122,27 +122,97 @@ NTSTATUS MemManage_readVirtualAddress(PMM_CONTEXT context, CR3 tableBase, GUEST_
 {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 
-	/* Get the physical address of the guest memory. */
-	HOST_PHYS_ADDRESS physHost = GuestShim_GuestUVAToHPA(context, tableBase, guestVA);
-	if (0 != physHost)
+	GUEST_VIRTUAL_ADDRESS currentVA = guestVA;
+	PUINT8 currentBuffer = buffer;
+
+	while (0 != size)
 	{
-		/* Read the memory. */
-		status = MemManage_readPhysicalAddress(context, physHost, buffer, size);
+		/* We can only read one page at a time, therfore we need
+		 * to split our actions into a per page business. */
+		SIZE_T bytesThisPage = size;
+
+		/* Now trim so the first time in the loop we only do to a page boundary. */
+		if (currentVA & (PAGE_SIZE - 1))
+		{
+			SIZE_T misalignedBy = PAGE_SIZE - (currentVA & (PAGE_SIZE - 1));
+
+			if (bytesThisPage > misalignedBy)
+			{
+				bytesThisPage = misalignedBy;
+			}
+		}
+
+		/* If we still have more than a page left, only read a page this time. */
+		if (bytesThisPage > PAGE_SIZE)
+		{
+			bytesThisPage = PAGE_SIZE;
+		}
+
+		/* Get the physical address of the guest memory. */
+		HOST_PHYS_ADDRESS physHost = GuestShim_GuestUVAToHPA(context, tableBase, currentVA);
+		if (0 != physHost)
+		{
+			/* Read the memory. */
+			status = MemManage_readPhysicalAddress(context, physHost, currentBuffer, bytesThisPage);
+
+			if (NT_SUCCESS(status))
+			{
+				/* Increment pointer and subtract size remaining. */
+				currentVA += bytesThisPage;
+				currentBuffer += bytesThisPage;
+				size -= bytesThisPage;
+			}
+		}
 	}
 
 	return status;
 }
 
-NTSTATUS MemManage_writeVirtualAddress(PMM_CONTEXT context, CR3 tableBase, GUEST_VIRTUAL_ADDRESS guestVA, CONST PVOID buffer, SIZE_T size)
+NTSTATUS MemManage_writeVirtualAddress(PMM_CONTEXT context, CR3 tableBase, GUEST_VIRTUAL_ADDRESS guestVA, PVOID buffer, SIZE_T size)
 {
 	NTSTATUS status = STATUS_UNSUCCESSFUL;
 
-	/* Get the physical address of the guest memory. */
-	HOST_PHYS_ADDRESS physHost = GuestShim_GuestUVAToHPA(context, tableBase, guestVA);
-	if (NT_SUCCESS(status))
+	GUEST_VIRTUAL_ADDRESS currentVA = guestVA;
+	PUINT8 currentBuffer = buffer;
+
+	while (0 != size)
 	{
-		/* Write the memory. */
-		status = MemManage_writePhysicalAddress(context, physHost, buffer, size);
+		/* We can only read one page at a time, therfore we need
+		 * to split our actions into a per page business. */
+		SIZE_T bytesThisPage = size;
+
+		/* Now trim so the first time in the loop we only do to a page boundary. */
+		if (currentVA & (PAGE_SIZE - 1))
+		{
+			SIZE_T misalignedBy = PAGE_SIZE - (currentVA & (PAGE_SIZE - 1));
+
+			if (bytesThisPage > misalignedBy)
+			{
+				bytesThisPage = misalignedBy;
+			}
+		}
+
+		/* If we still have more than a page left, only read a page this time. */
+		if (bytesThisPage > PAGE_SIZE)
+		{
+			bytesThisPage = PAGE_SIZE;
+		}
+
+		/* Get the physical address of the guest memory. */
+		HOST_PHYS_ADDRESS physHost = GuestShim_GuestUVAToHPA(context, tableBase, currentVA);
+		if (0 != physHost)
+		{
+			/* Write the memory. */
+			status = MemManage_writePhysicalAddress(context, physHost, currentBuffer, bytesThisPage);
+
+			if (NT_SUCCESS(status))
+			{
+				/* Increment pointer and subtract size remaining. */
+				currentVA += bytesThisPage;
+				currentBuffer += bytesThisPage;
+				size -= bytesThisPage;
+			}
+		}
 	}
 
 	return status;

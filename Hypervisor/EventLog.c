@@ -44,8 +44,15 @@ void EventLog_init(void)
 
 	eventCount = 0;
 
-	/* TODO: Register a VMCALL handler for dealing with popping
-	 * events off of the list. */
+	/* DEBUG: Add some fake events. */
+	CR0 testCR0 = { 0 };
+	CR3 testCR3 = { 0 };
+	CR4 testCR4 = { 0 };
+	CONTEXT testConext = { 0 };
+	EventLog_logEvent(1, testCR0, testCR3, testCR4, &testConext, "debug1");
+	EventLog_logEvent(2, testCR0, testCR3, testCR4, &testConext, "debug2");
+	EventLog_logEvent(3, testCR0, testCR3, testCR4, &testConext, "debug3");
+	EventLog_logEvent(4, testCR0, testCR3, testCR4, &testConext, "debug4");
 }
 
 NTSTATUS EventLog_logEvent(ULONG procIndex, CR0 guestCR0, CR3 guestCR3, 
@@ -102,25 +109,27 @@ NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize)
 	NTSTATUS status;
 
 	/* Ensure that a buffer size if aligned to event boundary and is big enough for at least one. */
-	if ((bufferSize >= sizeof(EVENT_RECORD)) && (0 != bufferSize % sizeof(EVENT_RECORD)))
+	if (bufferSize >= sizeof(EVENT_RECORD))
 	{
 		/* Acquire the synchronization mutex to use the list. */
 		ExAcquireFastMutex(&syncMutex);
 
 		SIZE_T eventCountToReturn = bufferSize / sizeof(EVENT_RECORD);
 
-		for (SIZE_T i = 0; (i < eventCountToReturn) && (i < eventCount); i++)
+		for (SIZE_T i = 0; (i < eventCountToReturn); i++)
 		{
 			/* Always take the head from the list. */
-			PEVENT_RECORD eventRecord = CONTAINING_RECORD(&eventList, EVENT_RECORD, listEntry);
+			PEVENT_RECORD eventRecord = CONTAINING_RECORD(eventList.Flink, EVENT_RECORD, listEntry);
 
-			RtlCopyMemory(buffer, &eventRecord, sizeof(EVENT_RECORD));
+			RtlCopyMemory(buffer, eventRecord, sizeof(EVENT_RECORD));
 
 			/* Increment buffer to next location to copy to. */
 			buffer += sizeof(EVENT_RECORD);
 
 			/* Remove the head from the list as we have just parsed it. */
-			RemoveHeadList(&eventList);
+			(void)RemoveHeadList(&eventList);
+
+			eventCount--;
 		}
 
 		/* Release the mutex. */

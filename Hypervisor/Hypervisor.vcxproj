@@ -176,6 +176,10 @@
     <ClInclude Include="Debug.h" />
     <ClInclude Include="EPT.h" />
     <ClInclude Include="EventLog.h" />
+    <ClInclude Include="EventLog_Common.h">
+      <SubType>
+      </SubType>
+    </ClInclude>
     <ClInclude Include="GDT.h" />
     <ClInclude Include="GuestShim.h" />
     <ClInclude Include="Handlers.h" />

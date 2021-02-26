@@ -1,5 +1,6 @@
 #include <ntddk.h>
 #include "EventLog.h"
+#include "EventLog_Common.h"
 
 /******************** External API ********************/
 
@@ -7,18 +8,11 @@
 /******************** Module Typedefs ********************/
 
 /* A single event record, this will be part of the list. */
-typedef struct _EVENT_RECORD
+typedef struct _EVENT_LIST_ENTRY
 {
 	LIST_ENTRY listEntry;
-
-	ULONG procIndex;
-	UINT64 timeStamp;
-	CR0 cr0;
-	CR3 cr3;
-	CR4 cr4;
-	CONTEXT context;
-	CHAR extraString[MAX_EXTRA_CHARS];
-} EVENT_RECORD, *PEVENT_RECORD;
+	EVENT_DATA data;
+} EVENT_LIST_ENTRY, *PEVENT_LIST_ENTRY;
 
 /******************** Module Constants ********************/
 
@@ -61,31 +55,31 @@ NTSTATUS EventLog_logEvent(ULONG procIndex, CR0 guestCR0, CR3 guestCR3,
 	NTSTATUS status;
 
 	/* Allocate a new event record. */
-	PEVENT_RECORD eventRecord = (PEVENT_RECORD)ExAllocatePool(NonPagedPool, sizeof(EVENT_RECORD));
-	if (NULL != eventRecord)
+	PEVENT_LIST_ENTRY eventListEntry = (PEVENT_LIST_ENTRY)ExAllocatePool(NonPagedPool, sizeof(EVENT_LIST_ENTRY));
+	if (NULL != eventListEntry)
 	{
 		/* Zero the allocated memory. */
-		RtlZeroMemory(eventRecord, sizeof(EVENT_RECORD));
+		RtlZeroMemory(eventListEntry, sizeof(EVENT_LIST_ENTRY));
 
 		/* Acquire the synchronization mutex to add to list. */
 		ExAcquireFastMutex(&syncMutex);
 
 		/* Fill in the event record fields. */
-		eventRecord->procIndex = procIndex;
-		eventRecord->timeStamp = __rdtsc();
-		eventRecord->cr0 = guestCR0;
-		eventRecord->cr3 = guestCR3;
-		eventRecord->cr4 = guestCR4;
-		eventRecord->context = *guestContext;
+		eventListEntry->data.procIndex = procIndex;
+		eventListEntry->data.timeStamp = __rdtsc();
+		eventListEntry->data.cr0 = guestCR0;
+		eventListEntry->data.cr3 = guestCR3;
+		eventListEntry->data.cr4 = guestCR4;
+		eventListEntry->data.context = *guestContext;
 
 		/* Fill in extra text strings. */
 		if (NULL != extraString)
 		{
-			memcpy(eventRecord->extraString, extraString, strlen(extraString));
+			memcpy(eventListEntry->data.extraString, extraString, strlen(extraString));
 		}
 
 		/* Add the item to the list. */
-		InsertTailList(&eventList, &eventRecord->listEntry);
+		InsertTailList(&eventList, &eventListEntry->listEntry);
 
 		/* Increment the event count. */
 		eventCount++;
@@ -109,22 +103,22 @@ NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize)
 	NTSTATUS status;
 
 	/* Ensure that a buffer size if aligned to event boundary and is big enough for at least one. */
-	if (bufferSize >= sizeof(EVENT_RECORD))
+	if (bufferSize >= sizeof(EVENT_LIST_ENTRY))
 	{
 		/* Acquire the synchronization mutex to use the list. */
 		ExAcquireFastMutex(&syncMutex);
 
-		SIZE_T eventCountToReturn = bufferSize / sizeof(EVENT_RECORD);
+		SIZE_T eventCountToReturn = bufferSize / sizeof(EVENT_LIST_ENTRY);
 
 		for (SIZE_T i = 0; (i < eventCountToReturn); i++)
 		{
 			/* Always take the head from the list. */
-			PEVENT_RECORD eventRecord = CONTAINING_RECORD(eventList.Flink, EVENT_RECORD, listEntry);
+			PEVENT_LIST_ENTRY eventListEntry = CONTAINING_RECORD(eventList.Flink, EVENT_LIST_ENTRY, listEntry);
 
-			RtlCopyMemory(buffer, eventRecord, sizeof(EVENT_RECORD));
+			RtlCopyMemory(buffer, &eventListEntry->data, sizeof(EVENT_DATA));
 
 			/* Increment buffer to next location to copy to. */
-			buffer += sizeof(EVENT_RECORD);
+			buffer += sizeof(EVENT_DATA);
 
 			/* Remove the head from the list as we have just parsed it. */
 			(void)RemoveHeadList(&eventList);
@@ -147,7 +141,7 @@ NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize)
 
 SIZE_T EventLog_getBufferSize(void)
 {
-	return eventCount * sizeof(EVENT_RECORD);
+	return eventCount * sizeof(EVENT_DATA);
 }
 
 /******************** Module Code ********************/

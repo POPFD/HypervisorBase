@@ -2,6 +2,8 @@
 #include "ia32.h"
 
 /******************** Public Typedefs ********************/
+#define STATIC_EVENT_BUFFER_SIZE 0x4000000
+
 #define MAX_EXTRA_CHARS 50
 
 typedef struct _EVENT_DATA

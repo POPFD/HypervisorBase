@@ -3,6 +3,7 @@
 #include "MemManage.h"
 #include "VMShadow.h"
 #include "EventLog.h"
+#include "EventLog_Common.h"
 #include "Process.h"
 
 /******************** External API ********************/
@@ -181,39 +182,40 @@ static NTSTATUS actionGatherEvents(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRTUAL
 		{
 			/* Check to see if expected size is zero.
 			 * if so, we return the current size of the event log. */
-			if (0 == params.expectedSize)
+			if ((NULL != params.buffer) && (0 != params.bufferSize))
 			{
-				params.actualSize = EventLog_getBufferSize();
-				status = STATUS_SUCCESS;
+				/* Here is a static buffer that is reserved for holding events,
+				 * we use this to store events. */
+				static UINT8 staticEventBuffer[STATIC_EVENT_BUFFER_SIZE];
+
+				/* Ensure we can fetch only enough for our static buffer size. */
+				if (params.bufferSize > STATIC_EVENT_BUFFER_SIZE)
+				{
+					params.bufferSize = STATIC_EVENT_BUFFER_SIZE;
+				}
+
+				/* Read the events into our allocated buffer. */
+				status = EventLog_retrieveAndClear(staticEventBuffer, params.bufferSize, &params.eventCount);
+
+				if (0 == params.eventCount)
+				{
+					/* Unable to retrieve, due to no events being present. */
+					status = STATUS_UNSUCCESSFUL;
+				}
+
+				if (NT_SUCCESS(status))
+				{
+					/* Now write the buffer to the guest VA specified. */
+					status = MemManage_writeVirtualAddress(&lpData->mmContext,
+						guestCR3,
+						(GUEST_VIRTUAL_ADDRESS)params.buffer,
+						staticEventBuffer,
+						params.bufferSize);
+				}
 			}
 			else
 			{
-				/* Allocate a temporary kernel buffer to hold the events. */
-				PUINT8 tempBuffer = ExAllocatePool(NonPagedPoolNx, params.expectedSize);
-				if (NULL != tempBuffer)
-				{
-					RtlZeroMemory(tempBuffer, params.expectedSize);
-
-					/* Read the events into our allocated buffer. */
-					status = EventLog_retrieveAndClear(tempBuffer, params.expectedSize);
-
-					if (NT_SUCCESS(status))
-					{
-						/* Now write the buffer to the guest VA specified. */
-						status = MemManage_writeVirtualAddress(&lpData->mmContext,
-															   guestCR3,
-															   (GUEST_VIRTUAL_ADDRESS)params.buffer,
-															   tempBuffer,
-															   params.expectedSize);
-					}
-
-					/* Free the allocated temp kernel pool */
-					ExFreePool(tempBuffer);
-				}
-				else
-				{
-					status = STATUS_NO_MEMORY;
-				}
+				status = STATUS_INVALID_PARAMETER;
 			}
 
 			/* Write the parameters back to the guest, as they may have been modified. */

@@ -7,7 +7,7 @@
 
 /******************** Module Typedefs ********************/
 
-#define MAX_ELEMENTS 100000
+#define MAX_ELEMENTS 30000
 
 typedef struct _EVENT_QUEUE
 {
@@ -22,7 +22,7 @@ typedef struct _EVENT_QUEUE
 
 /******************** Module Variables ********************/
 
-static KGUARDED_MUTEX syncMutex = { 0 };
+static KSPIN_LOCK syncLock = { 0 };
 static EVENT_QUEUE eventQueue = { 0 };
 
 /******************** Module Prototypes ********************/
@@ -34,8 +34,8 @@ static BOOLEAN isQueueEmpty(void);
 
 void EventLog_init(void)
 {
-	/* Initialize the synchronization mutex. */
-	KeInitializeGuardedMutex(&syncMutex);
+	/* Initialize the synchronization object. */
+	KeInitializeSpinLock(&syncLock);
 
 	/* Initialize the event queue. */
 	eventQueue.head = -1;
@@ -48,8 +48,9 @@ NTSTATUS EventLog_logEvent(ULONG procIndex, CR0 guestCR0, CR3 guestCR3,
 {
 	NTSTATUS status;
 
-	/* Acquire the synchronization mutex to add to list. */
-	KeAcquireGuardedMutex(&syncMutex);
+	/* Acquire the synchronization object. */
+	KIRQL oldIRQL;
+	KeAcquireSpinLock(&syncLock, &oldIRQL);
 
 	if (FALSE == isQueueFull())
 	{
@@ -96,13 +97,13 @@ NTSTATUS EventLog_logEvent(ULONG procIndex, CR0 guestCR0, CR3 guestCR3,
 		status = STATUS_NO_MEMORY;
 	}
 
-	/* Release the mutex. */
-	KeReleaseGuardedMutex(&syncMutex);
+	/* Release the synchronization object. */
+	KeReleaseSpinLock(&syncLock, oldIRQL);
 
 	return status;
 }
 
-NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize)
+NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize, SIZE_T* eventCount)
 {
 	/* Retrieves X events from the head of the list, based on buffer size. */
 	NTSTATUS status;
@@ -110,12 +111,31 @@ NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize)
 	/* Ensure that a buffer size if aligned to event boundary and is big enough for at least one. */
 	if (bufferSize >= sizeof(EVENT_DATA))
 	{
-		/* Acquire the synchronization mutex to use the list. */
-		KeAcquireGuardedMutex(&syncMutex);
+		/* Acquire the synchronization object. */
+		KIRQL oldIRQL;
+		KeAcquireSpinLock(&syncLock, &oldIRQL);
 
-		SIZE_T eventCountToReturn = bufferSize / sizeof(EVENT_DATA);
+		/* Determine how many events to return. */
+		SIZE_T eventsToReturn;
+		SIZE_T maxEventsForBuffer = bufferSize / sizeof(EVENT_DATA);
 
-		for (SIZE_T i = 0; (i < eventCountToReturn); i++)
+		if (eventQueue.count < maxEventsForBuffer)
+		{
+			eventsToReturn = eventQueue.count;
+		}
+		else
+		{
+			eventsToReturn = maxEventsForBuffer;
+		}
+
+		*eventCount = eventsToReturn;
+
+		if (eventsToReturn > 0)
+		{
+			DbgBreakPoint();
+		}
+
+		for (SIZE_T i = 0; i < eventsToReturn; i++)
 		{
 			if (FALSE == isQueueEmpty())
 			{
@@ -153,8 +173,8 @@ NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize)
 			}
 		}
 
-		/* Release the mutex. */
-		KeReleaseGuardedMutex(&syncMutex);
+		/* Release the synchronization object. */
+		KeReleaseSpinLock(&syncLock, oldIRQL);
 
 		status = STATUS_SUCCESS;
 	}
@@ -164,13 +184,6 @@ NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize)
 	}
 
 	return status;
-}
-
-SIZE_T EventLog_getBufferSize(void)
-{
-	SIZE_T result = eventQueue.count * sizeof(EVENT_DATA);
-
-	return result;
 }
 
 /******************** Module Code ********************/

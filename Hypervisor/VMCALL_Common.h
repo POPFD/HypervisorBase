@@ -39,9 +39,9 @@ typedef struct _VM_PARAM_SHADOW_PROC
 
 typedef struct _VM_PARAM_GATHER_EVENTS
 {
-	PVOID buffer;				/* IN */
-	SIZE_T expectedSize;		/* IN */
-	SIZE_T actualSize;			/* OUT */
+	SIZE_T bufferSize;			/* IN */
+	PUINT8 buffer;				/* INOUT */
+	SIZE_T eventCount;			/* OUT */
 } VM_PARAM_GATHER_EVENTS, *PVM_PARAM_GATHER_EVENTS;
 
 /******************** Public Constants ********************/

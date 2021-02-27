@@ -7,7 +7,7 @@
 
 /******************** Module Typedefs ********************/
 
-#define MAX_ELEMENTS 50000
+#define MAX_ELEMENTS 100000
 
 typedef struct _EVENT_QUEUE
 {

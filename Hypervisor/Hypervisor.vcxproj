@@ -197,7 +197,7 @@
       <SubType>
       </SubType>
     </ClInclude>
-    <ClInclude Include="Process.h" />
+    <ClInclude Include="ProcessDefines.h" />
     <ClInclude Include="VMCALL.h" />
     <ClInclude Include="VMHook.h" />
     <ClInclude Include="VMM.h" />

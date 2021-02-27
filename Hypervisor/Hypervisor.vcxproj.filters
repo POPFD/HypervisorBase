@@ -81,9 +81,6 @@
     <ClInclude Include="MTRR.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Process.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="VMCALL.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -109,6 +106,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="EventLog_Common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ProcessDefines.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

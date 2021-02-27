@@ -22,7 +22,7 @@ typedef struct _EVENT_QUEUE
 
 /******************** Module Variables ********************/
 
-static FAST_MUTEX syncMutex = { 0 };
+static KGUARDED_MUTEX syncMutex = { 0 };
 static EVENT_QUEUE eventQueue = { 0 };
 
 /******************** Module Prototypes ********************/
@@ -35,7 +35,7 @@ static BOOLEAN isQueueEmpty(void);
 void EventLog_init(void)
 {
 	/* Initialize the synchronization mutex. */
-	ExInitializeFastMutex(&syncMutex);
+	KeInitializeGuardedMutex(&syncMutex);
 
 	/* Initialize the event queue. */
 	eventQueue.head = -1;
@@ -49,7 +49,7 @@ NTSTATUS EventLog_logEvent(ULONG procIndex, CR0 guestCR0, CR3 guestCR3,
 	NTSTATUS status;
 
 	/* Acquire the synchronization mutex to add to list. */
-	ExAcquireFastMutex(&syncMutex);
+	KeAcquireGuardedMutex(&syncMutex);
 
 	if (FALSE == isQueueFull())
 	{
@@ -97,7 +97,7 @@ NTSTATUS EventLog_logEvent(ULONG procIndex, CR0 guestCR0, CR3 guestCR3,
 	}
 
 	/* Release the mutex. */
-	ExReleaseFastMutex(&syncMutex);
+	KeReleaseGuardedMutex(&syncMutex);
 
 	return status;
 }
@@ -111,7 +111,7 @@ NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize)
 	if (bufferSize >= sizeof(EVENT_DATA))
 	{
 		/* Acquire the synchronization mutex to use the list. */
-		ExAcquireFastMutex(&syncMutex);
+		KeAcquireGuardedMutex(&syncMutex);
 
 		SIZE_T eventCountToReturn = bufferSize / sizeof(EVENT_DATA);
 
@@ -154,7 +154,7 @@ NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize)
 		}
 
 		/* Release the mutex. */
-		ExReleaseFastMutex(&syncMutex);
+		KeReleaseGuardedMutex(&syncMutex);
 
 		status = STATUS_SUCCESS;
 	}
@@ -168,13 +168,7 @@ NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize)
 
 SIZE_T EventLog_getBufferSize(void)
 {
-	/* Acquire the synchronization mutex to use the list. */
-	ExAcquireFastMutex(&syncMutex);
-
 	SIZE_T result = eventQueue.count * sizeof(EVENT_DATA);
-
-	/* Release the mutex. */
-	ExReleaseFastMutex(&syncMutex);
 
 	return result;
 }

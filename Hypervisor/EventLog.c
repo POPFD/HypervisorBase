@@ -37,16 +37,6 @@ void EventLog_init(void)
 	InitializeListHead(&eventList);
 
 	eventCount = 0;
-
-	/* DEBUG: Add some fake events. */
-	CR0 testCR0 = { 0 };
-	CR3 testCR3 = { 0 };
-	CR4 testCR4 = { 0 };
-	CONTEXT testConext = { 0 };
-	EventLog_logEvent(1, testCR0, testCR3, testCR4, &testConext, "debug1");
-	EventLog_logEvent(2, testCR0, testCR3, testCR4, &testConext, "debug2");
-	EventLog_logEvent(3, testCR0, testCR3, testCR4, &testConext, "debug3");
-	EventLog_logEvent(4, testCR0, testCR3, testCR4, &testConext, "debug4");
 }
 
 NTSTATUS EventLog_logEvent(ULONG procIndex, CR0 guestCR0, CR3 guestCR3, 

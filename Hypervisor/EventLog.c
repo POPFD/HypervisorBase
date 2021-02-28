@@ -1,193 +1,93 @@
 #include <ntddk.h>
 #include "EventLog.h"
 #include "EventLog_Common.h"
+#include "Intrinsics.h"
 
 /******************** External API ********************/
 
 
 /******************** Module Typedefs ********************/
 
-typedef struct _EVENT_QUEUE
-{
-	int head;
-	int tail;
-	int count;
-	EVENT_DATA elements[EVENT_COUNT_MAX];
-} EVENT_QUEUE, *PEVENT_QUEUE;
 
 /******************** Module Constants ********************/
 
 
 /******************** Module Variables ********************/
 
-static KSPIN_LOCK syncLock = { 0 };
-static EVENT_QUEUE eventQueue = { 0 };
 
 /******************** Module Prototypes ********************/
-
-static BOOLEAN isQueueFull(void);
-static BOOLEAN isQueueEmpty(void);
+static NTSTATUS saveEventToFile(LPWSTR fileName, PEVENT_DATA eventData);
 
 /******************** Public Code ********************/
 
 void EventLog_init(void)
 {
-	/* Initialize the synchronization object. */
-	KeInitializeSpinLock(&syncLock);
 
-	/* Initialize the event queue. */
-	eventQueue.head = -1;
-	eventQueue.tail = -1;
-	eventQueue.count = 0;
 }
 
-NTSTATUS EventLog_logEvent(ULONG procIndex, CR0 guestCR0, CR3 guestCR3, 
-						   CR4 guestCR4, PCONTEXT guestContext, CHAR const* extraString)
+DECLSPEC_NORETURN void EventLog_logAsGuestThenRestore(PCONTEXT contextToRestore, ULONG procIndex, CHAR const* extraString)
 {
-	NTSTATUS status;
+	/* Back up the context to a stack based variable as we need to free
+	 * the one allocated by a pool */
+	CONTEXT stackContext = *contextToRestore;
 
-	/* Acquire the synchronization object. */
-	KIRQL oldIRQL;
-	KeAcquireSpinLock(&syncLock, &oldIRQL);
+	EVENT_DATA eventData;
 
-	if (FALSE == isQueueFull())
+	eventData.procIndex = procIndex;
+	eventData.timeStamp = __rdtsc();
+	eventData.cr0.Flags = __readcr0();
+	eventData.cr3.Flags = __readcr3();
+	eventData.cr4.Flags = __readcr4();
+	eventData.context = stackContext;
+
+	/* Fill in extra text strings. */
+	if (NULL != extraString)
 	{
-
-		/* Check to see if queue is empty, if so set head. */
-		if (-1 == eventQueue.head)
-		{
-			eventQueue.head++;
-		}
-
-		/* Increment the tail pointer, as we are adding an item. */
-		eventQueue.tail++;
-
-		/* Now we modulo by the max element size, to prevent overflow
-		 * which will reset it to beginning. */
-		eventQueue.tail %= EVENT_COUNT_MAX;
-
-		/* Now add the item info to the queue. */
-		PEVENT_DATA eventData = &eventQueue.elements[eventQueue.tail];
-
-		/* Fill in the event record fields. */
-		eventData->procIndex = procIndex;
-		eventData->timeStamp = __rdtsc();
-		eventData->cr0 = guestCR0;
-		eventData->cr3 = guestCR3;
-		eventData->cr4 = guestCR4;
-		eventData->context = *guestContext;
-
-		/* Fill in extra text strings. */
-		if (NULL != extraString)
-		{
-			memcpy(eventData->extraString, extraString, strlen(extraString));
-		}
-
-		/* Increment the event count. */
-		eventQueue.count++;
-
-		status = STATUS_SUCCESS;
-	}
-	else
-	{
-		/* DEBUG: Queue is full, this shouldn't happen without logger being present. */
-		DbgBreakPoint();
-		status = STATUS_NO_MEMORY;
+		memcpy(eventData.extraString, extraString, strlen(extraString));
 	}
 
-	/* Release the synchronization object. */
-	KeReleaseSpinLock(&syncLock, oldIRQL);
+	/* Attempt to write it the event to a file. */
+	//(void)saveEventToFile(L"\\??\\C:\\EventLog.log", &eventData);
 
-	return status;
-}
-
-NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize, SIZE_T* eventCount)
-{
-	/* Retrieves X events from the head of the list, based on buffer size. */
-	NTSTATUS status;
-
-	/* Ensure that a buffer size if aligned to event boundary and is big enough for at least one. */
-	if (bufferSize >= sizeof(EVENT_DATA))
-	{
-		/* Acquire the synchronization object. */
-		KIRQL oldIRQL;
-		KeAcquireSpinLock(&syncLock, &oldIRQL);
-
-		/* Determine how many events to return. */
-		SIZE_T eventsToReturn;
-		SIZE_T maxEventsForBuffer = bufferSize / sizeof(EVENT_DATA);
-
-		if (eventQueue.count < maxEventsForBuffer)
-		{
-			eventsToReturn = eventQueue.count;
-		}
-		else
-		{
-			eventsToReturn = maxEventsForBuffer;
-		}
-
-		*eventCount = eventsToReturn;
-
-		for (SIZE_T i = 0; i < eventsToReturn; i++)
-		{
-			if (FALSE == isQueueEmpty())
-			{
-				/* Copy the element data. */
-				RtlCopyMemory(buffer, &eventQueue.elements[eventQueue.head], sizeof(EVENT_DATA));
-
-				/* Increment buffer to next location to copy to. */
-				buffer += sizeof(EVENT_DATA);
-
-				/* Decrease the item count. */
-				eventQueue.count--;
-
-				/* Increase the head index. */
-				eventQueue.head++;
-
-				/* Now we modulo by the max element size to prevent
-				 * overflow, as this is a circular buffer. */
-				eventQueue.head %= EVENT_COUNT_MAX;
-
-				/* Check the new value of head, if it is above tail
-				 * this means we just dequeue'd our last item. */
-				if (eventQueue.head > eventQueue.tail)
-				{
-					eventQueue.head = -1;
-					eventQueue.tail = -1;
-				}
-
-				status = STATUS_SUCCESS;
-			}
-			else
-			{
-				/* DEBUG: This should never be called when the queue is empty. */
-				DbgBreakPoint();
-				status = STATUS_INTERNAL_ERROR;
-			}
-		}
-
-		/* Release the synchronization object. */
-		KeReleaseSpinLock(&syncLock, oldIRQL);
-
-		status = STATUS_SUCCESS;
-	}
-	else
-	{
-		status = STATUS_INVALID_PARAMETER;
-	}
-
-	return status;
+	/* Restore the context. */
+	_RestoreFromLog(&stackContext, NULL);
 }
 
 /******************** Module Code ********************/
 
-static BOOLEAN isQueueFull(void)
+static NTSTATUS saveEventToFile(LPWSTR fileName, PEVENT_DATA eventData)
 {
-	return ((0 == eventQueue.head) && ((EVENT_COUNT_MAX - 1) == eventQueue.tail)) ||
-		(eventQueue.head == (eventQueue.tail + 1));
-}
+	/* Create the file. */
+	HANDLE hFile;
+	OBJECT_ATTRIBUTES objectAttributes;
+	IO_STATUS_BLOCK ioStatusBlock;
 
-static BOOLEAN isQueueEmpty(void)
-{
-	return (-1 == eventQueue.tail);
+	UNICODE_STRING usFilePath;
+	RtlInitUnicodeString(&usFilePath, fileName);
+
+	InitializeObjectAttributes(&objectAttributes, &usFilePath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+
+	KIRQL origIRQL = KeGetCurrentIrql();
+
+	KeLowerIrql(PASSIVE_LEVEL);
+
+	NTSTATUS status = ZwCreateFile(&hFile, GENERIC_WRITE, &objectAttributes, &ioStatusBlock, NULL,
+		FILE_ATTRIBUTE_NORMAL, 0, FILE_OPEN_IF, FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0);
+
+	if (NT_SUCCESS(status))
+	{
+		/* Write the current event data to the file. */
+		LARGE_INTEGER byteOffset;
+		byteOffset.HighPart = -1;
+		byteOffset.LowPart = FILE_WRITE_TO_END_OF_FILE;
+
+		status = ZwWriteFile(hFile, NULL, NULL, NULL, &ioStatusBlock,
+			eventData, (ULONG)sizeof(EVENT_DATA), &byteOffset, NULL);
+
+		ZwClose(hFile);
+	}
+
+	KeRaiseIrql(origIRQL, &origIRQL);
+
+	return status;
 }

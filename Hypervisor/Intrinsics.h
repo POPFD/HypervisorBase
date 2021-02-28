@@ -22,3 +22,11 @@ _RestoreContext(
 	_In_ PCONTEXT ContextRecord,
 	_In_opt_ struct _EXCEPTION_RECORD * ExceptionRecord
 );
+
+DECLSPEC_NORETURN
+VOID
+__cdecl
+_RestoreFromLog(
+	_In_ PCONTEXT ContextRecord,
+	_In_opt_ struct _EXCEPTION_RECORD* ExceptionRecord
+);

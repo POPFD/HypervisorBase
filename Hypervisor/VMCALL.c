@@ -170,65 +170,68 @@ static NTSTATUS actionShadowInProcess(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRT
 static NTSTATUS actionGatherEvents(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRTUAL_ADDRESS buffer, SIZE_T bufferSize)
 {
 	UNREFERENCED_PARAMETER(lpData);
+	UNREFERENCED_PARAMETER(guestCR3);
+	UNREFERENCED_PARAMETER(buffer);
+	UNREFERENCED_PARAMETER(bufferSize);
 
-	NTSTATUS status;
+	NTSTATUS status = STATUS_UNSUCCESSFUL;
 
-	if ((0 != buffer) && (sizeof(VM_PARAM_GATHER_EVENTS) == bufferSize))
-	{
-		VM_PARAM_GATHER_EVENTS params = { 0 };
+	//if ((0 != buffer) && (sizeof(VM_PARAM_GATHER_EVENTS) == bufferSize))
+	//{
+	//	VM_PARAM_GATHER_EVENTS params = { 0 };
 
-		status = MemManage_readVirtualAddress(&lpData->mmContext, guestCR3, buffer, &params, sizeof(params));
-		if (NT_SUCCESS(status))
-		{
-			/* Check to see if expected size is zero.
-			 * if so, we return the current size of the event log. */
-			if ((NULL != params.buffer) && (0 != params.bufferSize))
-			{
-				/* Here is a static buffer that is reserved for holding events,
-				 * we use this to store events. */
-				static UINT8 staticEventBuffer[EVENT_BUFFER_SIZE];
+	//	status = MemManage_readVirtualAddress(&lpData->mmContext, guestCR3, buffer, &params, sizeof(params));
+	//	if (NT_SUCCESS(status))
+	//	{
+	//		/* Check to see if expected size is zero.
+	//		 * if so, we return the current size of the event log. */
+	//		if ((NULL != params.buffer) && (0 != params.bufferSize))
+	//		{
+	//			/* Here is a static buffer that is reserved for holding events,
+	//			 * we use this to store events. */
+	//			static UINT8 staticEventBuffer[EVENT_BUFFER_SIZE];
 
-				/* Ensure we can fetch only enough for our static buffer size. */
-				if (params.bufferSize > EVENT_BUFFER_SIZE)
-				{
-					params.bufferSize = EVENT_BUFFER_SIZE;
-				}
+	//			/* Ensure we can fetch only enough for our static buffer size. */
+	//			if (params.bufferSize > EVENT_BUFFER_SIZE)
+	//			{
+	//				params.bufferSize = EVENT_BUFFER_SIZE;
+	//			}
 
-				/* Read the events into our allocated buffer. */
-				status = EventLog_retrieveAndClear(staticEventBuffer, params.bufferSize, &params.eventCount);
+	//			/* Read the events into our allocated buffer. */
+	//			status = EventLog_retrieveAndClear(staticEventBuffer, params.bufferSize, &params.eventCount);
 
-				if (0 == params.eventCount)
-				{
-					/* Unable to retrieve, due to no events being present. */
-					status = STATUS_UNSUCCESSFUL;
-				}
+	//			if (0 == params.eventCount)
+	//			{
+	//				/* Unable to retrieve, due to no events being present. */
+	//				status = STATUS_UNSUCCESSFUL;
+	//			}
 
-				if (NT_SUCCESS(status))
-				{
-					/* Now write the buffer to the guest VA specified. */
-					status = MemManage_writeVirtualAddress(&lpData->mmContext,
-						guestCR3,
-						(GUEST_VIRTUAL_ADDRESS)params.buffer,
-						staticEventBuffer,
-						params.bufferSize);
-				}
-			}
-			else
-			{
-				status = STATUS_INVALID_PARAMETER;
-			}
+	//			if (NT_SUCCESS(status))
+	//			{
+	//				/* Now write the buffer to the guest VA specified. */
+	//				status = MemManage_writeVirtualAddress(&lpData->mmContext,
+	//					guestCR3,
+	//					(GUEST_VIRTUAL_ADDRESS)params.buffer,
+	//					staticEventBuffer,
+	//					params.bufferSize);
+	//			}
+	//		}
+	//		else
+	//		{
+	//			status = STATUS_INVALID_PARAMETER;
+	//		}
 
-			/* Write the parameters back to the guest, as they may have been modified. */
-			if (NT_SUCCESS(status))
-			{
-				status = MemManage_writeVirtualAddress(&lpData->mmContext, guestCR3, buffer, &params, sizeof(params));
-			}
-		}
-	}
-	else
-	{
-		status = STATUS_INVALID_PARAMETER;
-	}
+	//		/* Write the parameters back to the guest, as they may have been modified. */
+	//		if (NT_SUCCESS(status))
+	//		{
+	//			status = MemManage_writeVirtualAddress(&lpData->mmContext, guestCR3, buffer, &params, sizeof(params));
+	//		}
+	//	}
+	//}
+	//else
+	//{
+	//	status = STATUS_INVALID_PARAMETER;
+	//}
 
 	return status;
 }

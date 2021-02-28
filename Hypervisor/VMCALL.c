@@ -186,12 +186,12 @@ static NTSTATUS actionGatherEvents(PVMM_DATA lpData, CR3 guestCR3, GUEST_VIRTUAL
 			{
 				/* Here is a static buffer that is reserved for holding events,
 				 * we use this to store events. */
-				static UINT8 staticEventBuffer[STATIC_EVENT_BUFFER_SIZE];
+				static UINT8 staticEventBuffer[EVENT_BUFFER_SIZE];
 
 				/* Ensure we can fetch only enough for our static buffer size. */
-				if (params.bufferSize > STATIC_EVENT_BUFFER_SIZE)
+				if (params.bufferSize > EVENT_BUFFER_SIZE)
 				{
-					params.bufferSize = STATIC_EVENT_BUFFER_SIZE;
+					params.bufferSize = EVENT_BUFFER_SIZE;
 				}
 
 				/* Read the events into our allocated buffer. */

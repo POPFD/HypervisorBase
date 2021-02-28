@@ -7,14 +7,12 @@
 
 /******************** Module Typedefs ********************/
 
-#define MAX_ELEMENTS 30000
-
 typedef struct _EVENT_QUEUE
 {
 	int head;
 	int tail;
 	int count;
-	EVENT_DATA elements[MAX_ELEMENTS];
+	EVENT_DATA elements[EVENT_COUNT_MAX];
 } EVENT_QUEUE, *PEVENT_QUEUE;
 
 /******************** Module Constants ********************/
@@ -66,7 +64,7 @@ NTSTATUS EventLog_logEvent(ULONG procIndex, CR0 guestCR0, CR3 guestCR3,
 
 		/* Now we modulo by the max element size, to prevent overflow
 		 * which will reset it to beginning. */
-		eventQueue.tail %= MAX_ELEMENTS;
+		eventQueue.tail %= EVENT_COUNT_MAX;
 
 		/* Now add the item info to the queue. */
 		PEVENT_DATA eventData = &eventQueue.elements[eventQueue.tail];
@@ -130,11 +128,6 @@ NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize, SIZE_T* eve
 
 		*eventCount = eventsToReturn;
 
-		if (eventsToReturn > 0)
-		{
-			DbgBreakPoint();
-		}
-
 		for (SIZE_T i = 0; i < eventsToReturn; i++)
 		{
 			if (FALSE == isQueueEmpty())
@@ -153,7 +146,7 @@ NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize, SIZE_T* eve
 
 				/* Now we modulo by the max element size to prevent
 				 * overflow, as this is a circular buffer. */
-				eventQueue.head %= MAX_ELEMENTS;
+				eventQueue.head %= EVENT_COUNT_MAX;
 
 				/* Check the new value of head, if it is above tail
 				 * this means we just dequeue'd our last item. */
@@ -190,7 +183,7 @@ NTSTATUS EventLog_retrieveAndClear(PUINT8 buffer, SIZE_T bufferSize, SIZE_T* eve
 
 static BOOLEAN isQueueFull(void)
 {
-	return ((0 == eventQueue.head) && ((MAX_ELEMENTS - 1) == eventQueue.tail)) ||
+	return ((0 == eventQueue.head) && ((EVENT_COUNT_MAX - 1) == eventQueue.tail)) ||
 		(eventQueue.head == (eventQueue.tail + 1));
 }
 

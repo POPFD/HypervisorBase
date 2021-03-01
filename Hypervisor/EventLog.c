@@ -25,12 +25,10 @@ void EventLog_init(void)
 
 }
 
-DECLSPEC_NORETURN void EventLog_logAsGuestThenRestore(PCONTEXT contextToRestore, ULONG procIndex, CHAR const* extraString)
+DECLSPEC_NORETURN void EventLog_logAsGuestThenRestore(PCONTEXT context, ULONG procIndex, CHAR const* extraString)
 {
 	/* Back up the context to a stack based variable as we need to free
 	 * the one allocated by a pool */
-	CONTEXT stackContext = *contextToRestore;
-
 	EVENT_DATA eventData;
 
 	eventData.procIndex = procIndex;
@@ -38,7 +36,7 @@ DECLSPEC_NORETURN void EventLog_logAsGuestThenRestore(PCONTEXT contextToRestore,
 	eventData.cr0.Flags = __readcr0();
 	eventData.cr3.Flags = __readcr3();
 	eventData.cr4.Flags = __readcr4();
-	eventData.context = stackContext;
+	eventData.context = *context;
 
 	/* Fill in extra text strings. */
 	if (NULL != extraString)
@@ -47,10 +45,10 @@ DECLSPEC_NORETURN void EventLog_logAsGuestThenRestore(PCONTEXT contextToRestore,
 	}
 
 	/* Attempt to write it the event to a file. */
-	//(void)saveEventToFile(L"\\??\\C:\\EventLog.log", &eventData);
+	(void)saveEventToFile(L"\\??\\C:\\EventLog.bin", &eventData);
 
 	/* Restore the context. */
-	_RestoreFromLog(&stackContext, NULL);
+	_RestoreFromLog(context, NULL);
 }
 
 /******************** Module Code ********************/

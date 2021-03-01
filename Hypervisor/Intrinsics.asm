@@ -70,22 +70,22 @@ include ksamd64.inc
 
         mov rax, rcx                ; Store the context struct pointer in RAX
 
-        movaps  xmm0, CxXmm0[rax]   ;
-        movaps  xmm1, CxXmm1[rax]   ;
-        movaps  xmm2, CxXmm2[rax]   ;
-        movaps  xmm3, CxXmm3[rax]   ;
-        movaps  xmm4, CxXmm4[rax]   ;
-        movaps  xmm5, CxXmm5[rax]   ;
-        movaps  xmm6, CxXmm6[rax]   ; Restore all XMM registers
-        movaps  xmm7, CxXmm7[rax]   ;
-        movaps  xmm8, CxXmm8[rax]   ;
-        movaps  xmm9, CxXmm9[rax]   ;
-        movaps  xmm10, CxXmm10[rax] ;
-        movaps  xmm11, CxXmm11[rax] ;
-        movaps  xmm12, CxXmm12[rax] ;
-        movaps  xmm13, CxXmm13[rax] ;
-        movaps  xmm14, CxXmm14[rax] ;
-        movaps  xmm15, CxXmm15[rax] ;
+        movups  xmm0, CxXmm0[rax]   ;
+        movups  xmm1, CxXmm1[rax]   ;
+        movups  xmm2, CxXmm2[rax]   ;
+        movups  xmm3, CxXmm3[rax]   ;
+        movups  xmm4, CxXmm4[rax]   ;
+        movups  xmm5, CxXmm5[rax]   ;
+        movups  xmm6, CxXmm6[rax]   ; Restore all XMM registers
+        movups  xmm7, CxXmm7[rax]   ;
+        movups  xmm8, CxXmm8[rax]   ;
+        movups  xmm9, CxXmm9[rax]   ;
+        movups  xmm10, CxXmm10[rax] ;
+        movups  xmm11, CxXmm11[rax] ;
+        movups  xmm12, CxXmm12[rax] ;
+        movups  xmm13, CxXmm13[rax] ;
+        movups  xmm14, CxXmm14[rax] ;
+        movups  xmm15, CxXmm15[rax] ;
         ldmxcsr CxMxCsr[rax]        ;
 
         mov     rcx, CxRcx[rax]     ;

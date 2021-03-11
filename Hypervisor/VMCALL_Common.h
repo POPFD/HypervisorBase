@@ -13,7 +13,6 @@ typedef enum
 	VMCALL_ACTION_CHECK_PRESENCE = 0,
 	VMCALL_ACTION_RUN_AS_ROOT,
 	VMCALL_ACTION_SHADOW_IN_PROCESS,
-	VMCALL_ACTION_GATHER_EVENTS,
 	VMCALL_ACTION_COUNT
 } VMCALL_ACTION;
 
@@ -36,13 +35,6 @@ typedef struct _VM_PARAM_SHADOW_PROC
 	PUINT8 userTargetVA;		/* IN */
 	PUINT8 kernelExecPageVA;	/* IN */
 } VM_PARAM_SHADOW_PROC, *PVM_PARAM_SHADOW_PROC;
-
-typedef struct _VM_PARAM_GATHER_EVENTS
-{
-	SIZE_T bufferSize;			/* IN */
-	PUINT8 buffer;				/* INOUT */
-	SIZE_T eventCount;			/* OUT */
-} VM_PARAM_GATHER_EVENTS, *PVM_PARAM_GATHER_EVENTS;
 
 /******************** Public Constants ********************/
 

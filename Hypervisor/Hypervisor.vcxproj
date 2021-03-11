@@ -166,7 +166,6 @@
   <ItemGroup>
     <MASM Include="HandlerShim.asm" />
     <MASM Include="Intrinsics.asm" />
-    <MASM Include="LogShim.asm" />
     <MASM Include="VMCALL_Stub.asm" />
   </ItemGroup>
   <ItemGroup>
@@ -176,11 +175,6 @@
     <ClInclude Include="CPUID.h" />
     <ClInclude Include="Debug.h" />
     <ClInclude Include="EPT.h" />
-    <ClInclude Include="EventLog.h" />
-    <ClInclude Include="EventLog_Common.h">
-      <SubType>
-      </SubType>
-    </ClInclude>
     <ClInclude Include="GDT.h" />
     <ClInclude Include="GuestShim.h" />
     <ClInclude Include="Handlers.h" />
@@ -207,7 +201,6 @@
   <ItemGroup>
     <ClCompile Include="CPUID.c" />
     <ClCompile Include="EPT.c" />
-    <ClCompile Include="EventLog.c" />
     <ClCompile Include="GDT.c" />
     <ClCompile Include="GuestShim.c" />
     <ClCompile Include="Handlers.c" />

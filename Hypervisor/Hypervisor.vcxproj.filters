@@ -37,9 +37,6 @@
     <MASM Include="VMCALL_Stub.asm">
       <Filter>Source Files\ASM</Filter>
     </MASM>
-    <MASM Include="LogShim.asm">
-      <Filter>Source Files\ASM</Filter>
-    </MASM>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HandlerShim.h">
@@ -102,13 +99,7 @@
     <ClInclude Include="PageTable.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="EventLog.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="GuestShim.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="EventLog_Common.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ProcessDefines.h">
@@ -156,9 +147,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="PageTable.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="EventLog.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GuestShim.c">

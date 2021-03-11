@@ -389,13 +389,6 @@ static void setupVMCS(PVMM_DATA lpData)
 	* corresponds exactly to the location where RtlCaptureContext will return
 	* to inside of initialiseVirtualProcessor.
 	*/
-
-	/* DEBUG: Setup some marking of the stack. */
-	for (UINT32 i = 0; i < sizeof(lpData->hypervisorStack); i++)
-	{
-		lpData->hypervisorStack[i] = 0xAA;
-	}
-
 	__vmx_vmwrite(VMCS_GUEST_RSP, (uintptr_t)lpData->hypervisorStack + KERNEL_STACK_SIZE - sizeof(CONTEXT));
 	__vmx_vmwrite(VMCS_GUEST_RIP, (uintptr_t)HandlerShim_hostToGuest);
 	__vmx_vmwrite(VMCS_GUEST_RFLAGS, context->EFlags);

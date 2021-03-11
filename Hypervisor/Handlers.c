@@ -19,12 +19,10 @@ SIZE_T monitoredRangeEnd = 0;
 
 
 /******************** Module Constants ********************/
-#define VM_EXIT_OVERHEAD 500
-#define TSC_BELOW_CORRECTION 200
+
 
 /******************** Module Variables ********************/
-static volatile ULONG64 tscOffset = 0;
-static volatile ULONG64 lastGuestTSC = 0;
+
 
 /******************** Module Prototypes ********************/
 static void handleExitReason(PVMM_DATA lpData);
@@ -67,16 +65,8 @@ DECLSPEC_NORETURN VOID Handlers_guestToHost(PCONTEXT guestContext)
 	/* Copy the guest context into our LP data structure. */
 	RtlCopyMemory(&lpData->guestContext, guestContext, sizeof(CONTEXT));
 
-	//UINT64 exitTSCStart = __rdtsc();
-
 	/* Handle the exit reason. */
 	handleExitReason(lpData);
-
-	//UINT64 exitTSCTime = __rdtsc() - exitTSCStart;
-	//UINT64 correctionTime = exitTSCTime + VM_EXIT_OVERHEAD;
-
-	/* Increment the offset counter for TSC. */
-	//InterlockedAdd64((volatile LONG64*)&tscOffset, correctionTime);
 
 	/* Now to restore back to the guest. */
 
@@ -142,37 +132,6 @@ static void handleExitReason(PVMM_DATA lpData)
 
 	switch (exitReason)
 	{
-		case VMX_EXIT_REASON_EXECUTE_RDTSC:
-		case VMX_EXIT_REASON_EXECUTE_RDTSCP:
-		{
-			/* Read the current TSC. */
-			UINT64 hostTSC = __readmsr(IA32_TIME_STAMP_COUNTER);
-
-			UINT64 guestTSC = hostTSC - tscOffset;
-
-			/* Prevent going back in time. */
-			if (guestTSC < lastGuestTSC)
-			{
-				guestTSC = lastGuestTSC + TSC_BELOW_CORRECTION;
-			}
-
-			/* Store last sent TSC. */
-			lastGuestTSC = guestTSC;
-
-			/* Set the guest registers to the TSC value. */
-			lpData->guestContext.Rdx = (UINT32)(guestTSC >> 32);
-			lpData->guestContext.Rax = (UINT32)(guestTSC & 0xFFFFFFFF);
-
-			/* Set the auxiliary TSC value if RDTSCP was reason. */
-			if (VMX_EXIT_REASON_EXECUTE_RDTSCP == exitReason)
-			{
-				lpData->guestContext.Rcx = (UINT32)__readmsr(IA32_TSC_AUX);
-			}
-
-			moveToNextInstruction = TRUE;
-			break;
-		}
-
 		case VMX_EXIT_REASON_MONITOR_TRAP_FLAG:
 		{
 			if (TRUE == MTF_handleTrap(&lpData->mtfConfig))

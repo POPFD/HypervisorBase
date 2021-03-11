@@ -166,6 +166,7 @@
   <ItemGroup>
     <MASM Include="HandlerShim.asm" />
     <MASM Include="Intrinsics.asm" />
+    <MASM Include="LogShim.asm" />
     <MASM Include="VMCALL_Stub.asm" />
   </ItemGroup>
   <ItemGroup>

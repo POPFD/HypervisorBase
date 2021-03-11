@@ -66,48 +66,4 @@ include ksamd64.inc
         ret                         ; Restore RIP
     LEAF_END _RestoreContext, _TEXT$00
 
-    LEAF_ENTRY _RestoreFromLog, _TEXT$00
-
-        mov rax, rcx                ; Store the context struct pointer in RAX
-
-        movups  xmm0, CxXmm0[rax]   ;
-        movups  xmm1, CxXmm1[rax]   ;
-        movups  xmm2, CxXmm2[rax]   ;
-        movups  xmm3, CxXmm3[rax]   ;
-        movups  xmm4, CxXmm4[rax]   ;
-        movups  xmm5, CxXmm5[rax]   ;
-        movups  xmm6, CxXmm6[rax]   ; Restore all XMM registers
-        movups  xmm7, CxXmm7[rax]   ;
-        movups  xmm8, CxXmm8[rax]   ;
-        movups  xmm9, CxXmm9[rax]   ;
-        movups  xmm10, CxXmm10[rax] ;
-        movups  xmm11, CxXmm11[rax] ;
-        movups  xmm12, CxXmm12[rax] ;
-        movups  xmm13, CxXmm13[rax] ;
-        movups  xmm14, CxXmm14[rax] ;
-        movups  xmm15, CxXmm15[rax] ;
-        ldmxcsr CxMxCsr[rax]        ;
-
-        mov     rcx, CxRcx[rax]     ;
-        mov     rdx, CxRdx[rax]     ;
-        mov     r8, CxR8[rax]       ; Restore volatile registers
-        mov     r9, CxR9[rax]       ;
-        mov     r10, CxR10[rax]     ;
-        mov     r11, CxR11[rax]     ;
-
-        mov     rbx, CxRbx[rax]     ;
-        mov     rsi, CxRsi[rax]     ;
-        mov     rdi, CxRdi[rax]     ;
-        mov     rbp, CxRbp[rax]     ; Restore non volatile regsiters
-        mov     r12, CxR12[rax]     ;
-        mov     r13, CxR13[rax]     ;
-        mov     r14, CxR14[rax]     ;
-        mov     r15, CxR15[rax]     ;
-
-        mov     r11, CxRip[rax]     ; Trash R11 as it is a volatile register, we use this to remember RIP.
-        mov     rsp, CxRsp[rax]     ; Restore old stack 
-        push    r11                 ; Push RIP on stack
-        ret                         ; Restore RIP
-    LEAF_END _RestoreFromLog, _TEXT$00
-
 	END

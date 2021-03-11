@@ -37,6 +37,9 @@
     <MASM Include="VMCALL_Stub.asm">
       <Filter>Source Files\ASM</Filter>
     </MASM>
+    <MASM Include="LogShim.asm">
+      <Filter>Source Files\ASM</Filter>
+    </MASM>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HandlerShim.h">
